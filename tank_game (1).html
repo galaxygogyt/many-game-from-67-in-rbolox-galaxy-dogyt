@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2D Tactical Tank Warfare - Chaos Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0b0f19;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            background: #0f172a;
+        }
+        .hud-glass {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+        .hide-cursor {
+            cursor: none;
+        }
+        .hud-text-glow {
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+        .event-text-glow {
+            text-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
+        }
+    </style>
+</head>
+<body class="w-screen h-screen relative overflow-hidden text-white hide-cursor">
+
+    <!-- Canvas Engine -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Overlay UI Layer -->
+    <div id="uiOverlay" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top Section: Score, Timer & Active Event Alert -->
+        <div class="flex justify-between items-start w-full pointer-events-auto">
+            
+            <!-- Left Header: Score & Enemy Counter -->
+            <div class="hud-glass rounded-2xl p-3 sm:p-4 flex items-center space-x-4 border border-cyan-500/30">
+                <div>
+                    <div class="text-[10px] sm:text-xs text-cyan-400 font-extrabold uppercase tracking-widest">分數 Score</div>
+                    <div id="scoreVal" class="text-2xl sm:text-3xl font-black text-white hud-text-glow">0</div>
+                </div>
+                <div class="h-8 w-px bg-slate-700"></div>
+                <div>
+                    <div class="text-[10px] sm:text-xs text-amber-400 font-extrabold uppercase tracking-widest">剩餘敵軍 Enemies</div>
+                    <div id="enemyCountVal" class="text-2xl sm:text-3xl font-black text-white">0</div>
+                </div>
+            </div>
+
+            <!-- Center Header: 2-Minute Match Timer & Event Status -->
+            <div class="flex flex-col items-center">
+                <div class="hud-glass rounded-2xl px-6 py-2 border border-amber-500/40 text-center flex flex-col items-center">
+                    <div class="text-[10px] sm:text-xs text-amber-400 font-bold uppercase tracking-widest">剩餘時間 Time Left</div>
+                    <div id="matchTimer" class="text-2xl sm:text-4xl font-black text-amber-300 font-mono tracking-wider">02:00</div>
+                </div>
+                <div id="eventBanner" class="mt-2 px-5 py-1.5 rounded-full hud-glass text-amber-400 font-black text-xs sm:text-sm border border-amber-500/50 transition-all duration-300 opacity-0 transform translate-y-[-10px] flex items-center space-x-2">
+                    <span id="eventIcon">⚡</span>
+                    <span id="eventText" class="event-text-glow">無事件</span>
+                </div>
+            </div>
+
+            <!-- Right Header: Controls Guide -->
+            <div class="hud-glass rounded-2xl p-3 sm:p-4 text-right hidden md:block border border-slate-700/50">
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">操作說明 Controls</div>
+                <div class="text-xs text-cyan-300 font-mono space-y-0.5">
+                    <div><b class="text-white">W</b> 前進 | <b class="text-white">S</b> 後退</div>
+                    <div><b class="text-white">P</b> 左轉 | <b class="text-white">Q</b> 右轉</div>
+                    <div><b class="text-white">T</b> 顯示/隱藏射擊鈕 | <b class="text-white">R</b> 換彈夾</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Notification Banner -->
+        <div id="notifyBanner" class="self-center px-6 py-2 rounded-full hud-glass text-cyan-300 font-black text-sm sm:text-base opacity-0 transition-all duration-300 border border-cyan-500/50 transform translate-y-[-10px]">
+            SYSTEM READY
+        </div>
+
+        <!-- Bottom HUD System -->
+        <div class="flex justify-between items-end w-full pointer-events-auto">
+            
+            <!-- Left Side: Ammo Box & Interactive Shoot Button -->
+            <div class="flex items-end space-x-3">
+                
+                <!-- Bottom-Left Ammo HUD -->
+                <div class="hud-glass rounded-2xl p-4 min-w-[170px] border border-cyan-500/30">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">彈夾 Magazines</span>
+                        <span id="magCount" class="text-xs font-black text-amber-400">5 / 5</span>
+                    </div>
+                    
+                    <div class="flex items-baseline space-x-1">
+                        <span id="ammoVal" class="text-4xl font-black text-cyan-400 hud-text-glow">20</span>
+                        <span class="text-slate-500 text-lg font-bold">/ 20</span>
+                    </div>
+
+                    <!-- Reload Bar -->
+                    <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-700 relative">
+                        <div id="reloadBar" class="bg-cyan-400 h-full w-full transition-all duration-75"></div>
+                    </div>
+                    <div id="reloadStatus" class="text-[10px] text-slate-400 mt-1 text-center font-mono">按 'R' 或擊發自動裝彈</div>
+                </div>
+
+                <!-- Beside Ammo Box: Fire Button (Toggle with 'T') -->
+                <button id="fireBtn" class="hud-glass hover:bg-red-500/20 active:scale-95 transition-all p-4 sm:p-5 rounded-2xl border-2 border-red-500/60 flex flex-col items-center justify-center cursor-pointer shadow-lg shadow-red-500/10 group select-none">
+                    <div class="w-10 h-10 rounded-full border-2 border-red-500 flex items-center justify-center bg-red-500/20 group-hover:bg-red-500 transition-colors">
+                        <div class="w-4 h-4 bg-red-500 rounded-full group-hover:bg-white transition-colors"></div>
+                    </div>
+                    <span id="fireBtnLabel" class="text-xs font-black text-red-400 mt-1 tracking-wider uppercase">射擊 (T)</span>
+                </button>
+            </div>
+
+            <!-- Bottom Right: Player Health HUD -->
+            <div class="hud-glass rounded-2xl p-4 w-56 sm:w-64 border border-emerald-500/30">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">坦克裝甲 Health</span>
+                    <span id="hpValText" class="text-xs font-black text-emerald-400">150 / 150</span>
+                </div>
+                
+                <!-- Health Progress Bar -->
+                <div class="w-full bg-slate-800 h-4 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                    <div id="hpBar" class="bg-gradient-to-r from-emerald-500 to-green-400 h-full rounded-full w-full transition-all duration-150"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Dialog (Start / Victory / Defeat) -->
+    <div id="modalOverlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto">
+        <div class="hud-glass max-w-md w-full rounded-3xl p-6 sm:p-8 text-center border border-cyan-500/40 shadow-2xl">
+            <div class="w-16 h-16 bg-cyan-500/10 border-2 border-cyan-400 rounded-2xl mx-auto flex items-center justify-center mb-4">
+                <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+
+            <h1 id="modalTitle" class="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-amber-400 mb-2">2D 裝甲戰術坦克 - 隨機事件版</h1>
+            <p id="modalDesc" class="text-slate-300 text-xs sm:text-sm mb-6">2分鐘限時戰鬥！應對殭屍、隕石與沙塵暴等動態隨機事件！</p>
+            
+            <div class="bg-slate-900/80 rounded-2xl p-4 mb-6 text-left text-xs text-slate-300 space-y-1.5 border border-slate-800 font-mono">
+                <div class="font-bold text-cyan-400 mb-2 border-b border-slate-800 pb-1 flex justify-between">
+                    <span>遊戲規則 & 控制說明</span>
+                    <span class="text-amber-400">2分鐘限時</span>
+                </div>
+                <div class="flex justify-between"><span class="text-slate-400">• 移動 (前/後):</span> <span class="text-white font-bold">W / S</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 轉向 (左/右):</span> <span class="text-white font-bold">P / Q</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 開啟/隱藏射擊鈕:</span> <span class="text-white font-bold">T 鍵</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 手動補彈夾:</span> <span class="text-white font-bold">R 鍵</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 血量 & 彈藥:</span> <span class="text-emerald-400 font-bold">150 HP | 20發/夾 (5夾)</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• AI裝彈 & 攻擊:</span> <span class="text-red-400 font-bold">5秒裝彈 (AI會亂射)</span></div>
+                <div class="text-amber-400 font-bold border-t border-slate-800 pt-1.5 mt-2">⚡ 每15-20秒引發隨機事件：</div>
+                <div class="text-slate-400 text-[11px] leading-relaxed">
+                    🧟 <b>殭屍爆發</b> | ☄️ <b>隕石雨</b> | 📦 <b>空投補給</b> | 🌪️ <b>沙塵暴</b> | ⚡ <b>EMP電磁脈衝</b>
+                </div>
+            </div>
+
+            <button id="startBtn" class="w-full py-4 bg-gradient-to-r from-cyan-500 via-amber-500 to-red-500 hover:from-cyan-400 hover:to-red-400 text-white font-extrabold text-lg rounded-2xl shadow-lg shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer">
+                開始 2 分鐘極限戰鬥 START
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Engine Scripts -->
+    <script>
+        // ==========================================
+        // Synthesized Audio Engine (Web Audio API)
+        // ==========================================
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playShoot() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(320, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.12);
+                gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.12);
+            }
+
+            playExplosion() {
+                if (!this.ctx) return;
+                const dur = 0.4;
+                const bufferSize = this.ctx.sampleRate * dur;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                const noise = this.ctx.createBufferSource(); noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter(); filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(600, this.ctx.currentTime);
+                filter.frequency.linearRampToValueAtTime(40, this.ctx.currentTime + dur);
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+                noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
+                noise.start();
+            }
+
+            playZombieGroan() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(60, this.ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.3);
+            }
+
+            playEventAlert() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.setValueAtTime(900, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playReload() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(750, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playHit() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(160, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.08);
+            }
+        }
+
+        const sound = new SoundEngine();
+
+        // ==========================================
+        // Canvas & World Setup
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const keys = {};
+        const mouse = { x: 0, y: 0 };
+
+        // Requirements Config
+        const PLAYER_MAX_HP = 150;
+        const MAG_CAPACITY = 20;
+        const MAX_MAGS = 5;
+        const PLAYER_RELOAD_TIME = 0.5; // 0.5s reload
+        const AI_RELOAD_TIME = 5.0;      // 5s reload
+        const MATCH_DURATION = 120;     // 2 Minutes (120 seconds)
+
+        let gameState = 'START';
+        let matchTimerSeconds = MATCH_DURATION;
+        let matchInterval = null;
+        let lastTime = 0;
+        let score = 0;
+        let showShootBtn = true;
+        let screenShake = 0;
+
+        // Dynamic Random Event State
+        let eventTimer = 0;
+        let nextEventTime = 15; // Trigger every 15-20 seconds
+        let currentEvent = null; // 'ZOMBIES', 'METEOR', 'AIRDROP', 'SANDSTORM', 'EMP'
+        let eventDurationTimer = 0;
+
+        // Entity Collections
+        let particles = [];
+        let bullets = [];
+        let enemies = [];
+        let zombies = [];
+        let meteors = [];
+        let airDrops = [];
+        let treadMarks = [];
+        let floatingTexts = [];
+
+        // UI DOM References
+        const ammoValEl = document.getElementById('ammoVal');
+        const magCountEl = document.getElementById('magCount');
+        const reloadBarEl = document.getElementById('reloadBar');
+        const reloadStatusEl = document.getElementById('reloadStatus');
+        const hpBarEl = document.getElementById('hpBar');
+        const hpValTextEl = document.getElementById('hpValText');
+        const scoreValEl = document.getElementById('scoreVal');
+        const enemyCountValEl = document.getElementById('enemyCountVal');
+        const fireBtn = document.getElementById('fireBtn');
+        const matchTimerEl = document.getElementById('matchTimer');
+        const eventBanner = document.getElementById('eventBanner');
+        const eventIcon = document.getElementById('eventIcon');
+        const eventText = document.getElementById('eventText');
+        const notifyBanner = document.getElementById('notifyBanner');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalDesc = document.getElementById('modalDesc');
+        const startBtn = document.getElementById('startBtn');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let alertTimeout = null;
+        function showAlert(msg) {
+            notifyBanner.innerText = msg;
+            notifyBanner.classList.remove('opacity-0', 'translate-y-[-10px]');
+            notifyBanner.classList.add('opacity-100', 'translate-y-0');
+            clearTimeout(alertTimeout);
+            alertTimeout = setTimeout(() => {
+                notifyBanner.classList.remove('opacity-100', 'translate-y-0');
+                notifyBanner.classList.add('opacity-0', 'translate-y-[-10px]');
+            }, 1800);
+        }
+
+        function addFloatingText(x, y, text, color = '#38bdf8') {
+            floatingTexts.push({ x, y, text, color, alpha: 1.0, life: 40 });
+        }
+
+        // ==========================================
+        // Player Tank
+        // ==========================================
+        class PlayerTank {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 22;
+                this.angle = 0;
+                this.turretAngle = 0;
+                this.speed = 0;
+                this.maxSpeed = 3.2;
+                this.turnSpeed = 0.055;
+                this.hp = PLAYER_MAX_HP;
+
+                this.ammoInMag = MAG_CAPACITY;
+                this.magsLeft = MAX_MAGS - 1;
+                this.isReloading = false;
+                this.reloadTimer = 0;
+            }
+
+            update(dt) {
+                // Apply sandstorm speed penalty if active
+                const speedMult = (currentEvent === 'SANDSTORM') ? 0.6 : 1.0;
+
+                if (keys['w'] || keys['W']) {
+                    this.speed = Math.min(this.speed + 0.2, this.maxSpeed * speedMult);
+                } else if (keys['s'] || keys['S']) {
+                    this.speed = Math.max(this.speed - 0.2, -this.maxSpeed * 0.6 * speedMult);
+                } else {
+                    this.speed *= 0.88;
+                }
+
+                // Turning controls (P: Left, Q: Right)
+                if (keys['p'] || keys['P']) this.angle -= this.turnSpeed;
+                if (keys['q'] || keys['Q']) this.angle += this.turnSpeed;
+
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+
+                this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+
+                if (Math.abs(this.speed) > 0.5 && Math.random() < 0.3) {
+                    treadMarks.push({ x: this.x, y: this.y, angle: this.angle, life: 180 });
+                }
+
+                this.turretAngle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+
+                if (this.isReloading) {
+                    this.reloadTimer += dt;
+                    const progress = Math.min(this.reloadTimer / PLAYER_RELOAD_TIME, 1.0);
+                    reloadBarEl.style.width = `${progress * 100}%`;
+                    reloadStatusEl.innerText = `裝彈中... (${(PLAYER_RELOAD_TIME - this.reloadTimer).toFixed(1)}s)`;
+
+                    if (this.reloadTimer >= PLAYER_RELOAD_TIME) {
+                        this.isReloading = false;
+                        this.ammoInMag = MAG_CAPACITY;
+                        reloadStatusEl.innerText = "READY";
+                        reloadBarEl.style.width = "100%";
+                        showAlert("彈夾裝填完成！ READY!");
+                    }
+                }
+            }
+
+            reload() {
+                if (this.isReloading) return;
+                if (this.ammoInMag === MAG_CAPACITY) {
+                    showAlert("彈夾已滿！ Magazine Full!");
+                    return;
+                }
+                if (this.magsLeft <= 0) {
+                    showAlert("已無備用彈夾！ Out of Mags!");
+                    return;
+                }
+
+                this.magsLeft--;
+                this.isReloading = true;
+                this.reloadTimer = 0;
+                sound.playReload();
+                showAlert("開始裝彈... Reloading...");
+            }
+
+            shoot() {
+                if (currentEvent === 'EMP') {
+                    showAlert("⚡ EMP 電磁脈衝干擾中，無法射擊！");
+                    return;
+                }
+                if (this.isReloading) return;
+
+                if (this.ammoInMag <= 0) {
+                    if (this.magsLeft > 0) this.reload();
+                    else showAlert("彈藥耗盡！ NO AMMO!");
+                    return;
+                }
+
+                this.ammoInMag--;
+                sound.playShoot();
+
+                const muzzleDist = 32;
+                const bx = this.x + Math.cos(this.turretAngle) * muzzleDist;
+                const by = this.y + Math.sin(this.turretAngle) * muzzleDist;
+
+                bullets.push(new Bullet(bx, by, this.turretAngle, true));
+                createMuzzleFlash(bx, by, this.turretAngle);
+
+                if (this.ammoInMag === 0 && this.magsLeft > 0) {
+                    this.reload();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                ctx.rotate(this.angle);
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(-22, -18, 44, 8);
+                ctx.fillRect(-22, 10, 44, 8);
+
+                ctx.fillStyle = '#0284c7';
+                ctx.beginPath();
+                ctx.roundRect(-20, -13, 40, 26, 6);
+                ctx.fill();
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.restore();
+
+                // Turret
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.turretAngle);
+
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, -4, 28, 8);
+                ctx.strokeStyle = '#38bdf8';
+                ctx.strokeRect(0, -4, 28, 8);
+
+                ctx.fillStyle = '#0369a1';
+                ctx.beginPath();
+                ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#7dd3fc';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                if (currentEvent === 'EMP') {
+                    ctx.strokeStyle = '#f59e0b';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // ==========================================
+        // AI Tank Class (5s Reload & Wild Shooting)
+        // ==========================================
+        class AITank {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20;
+                this.angle = Math.random() * Math.PI * 2;
+                this.turretAngle = this.angle;
+                this.speed = 1.8;
+                this.hp = 60;
+                this.moveTimer = 0;
+                this.targetAngle = this.angle;
+                this.shootCooldown = Math.random() * AI_RELOAD_TIME; 
+            }
+
+            update(dt, player) {
+                this.moveTimer += dt;
+                if (this.moveTimer > 2.0) {
+                    this.moveTimer = 0;
+                    this.targetAngle = this.angle + (Math.random() - 0.5) * 2.5;
+                }
+
+                const speedMult = (currentEvent === 'SANDSTORM') ? 0.5 : 1.0;
+                this.angle += (this.targetAngle - this.angle) * 0.05;
+                this.x += Math.cos(this.angle) * this.speed * speedMult;
+                this.y += Math.sin(this.angle) * this.speed * speedMult;
+
+                if (this.x < 40 || this.x > canvas.width - 40) this.angle = Math.PI - this.angle;
+                if (this.y < 40 || this.y > canvas.height - 40) this.angle = -this.angle;
+
+                // Wild AI Shooting (5s cooldown)
+                this.shootCooldown += dt;
+                this.turretAngle += 0.03;
+
+                if (this.shootCooldown >= AI_RELOAD_TIME && currentEvent !== 'EMP') {
+                    this.shootCooldown = 0;
+
+                    let wildAngle = (Math.random() < 0.5) 
+                        ? Math.random() * Math.PI * 2
+                        : Math.atan2(player.y - this.y, player.x - this.x) + (Math.random() - 0.5) * 1.8;
+
+                    this.turretAngle = wildAngle;
+                    const bx = this.x + Math.cos(wildAngle) * 25;
+                    const by = this.y + Math.sin(wildAngle) * 25;
+                    bullets.push(new Bullet(bx, by, wildAngle, false));
+                    sound.playShoot();
+                    createMuzzleFlash(bx, by, wildAngle);
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                ctx.rotate(this.angle);
+                ctx.fillStyle = '#450a0a';
+                ctx.fillRect(-18, -14, 36, 6);
+                ctx.fillRect(-18, 8, 36, 6);
+
+                ctx.fillStyle = '#dc2626';
+                ctx.beginPath();
+                ctx.roundRect(-16, -10, 32, 20, 4);
+                ctx.fill();
+                ctx.strokeStyle = '#fca5a5';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                ctx.restore();
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.turretAngle);
+
+                ctx.fillStyle = '#18181b';
+                ctx.fillRect(0, -3, 22, 6);
+
+                ctx.fillStyle = '#991b1b';
+                ctx.beginPath();
+                ctx.arc(0, 0, 9, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+
+                // HP Bar
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(this.x - 18, this.y - 25, 36, 5);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(this.x - 18, this.y - 25, (this.hp / 60) * 36, 5);
+            }
+        }
+
+        // ==========================================
+        // Zombie Class (Event: Zombie Outbreak)
+        // ==========================================
+        class Zombie {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 12;
+                this.hp = 25;
+                this.speed = 2.4;
+            }
+
+            update(player, enemies) {
+                // Target nearest living entity (player or AI tank)
+                let target = player;
+                let minDist = Math.hypot(player.x - this.x, player.y - this.y);
+
+                for (let e of enemies) {
+                    let d = Math.hypot(e.x - this.x, e.y - this.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        target = e;
+                    }
+                }
+
+                const angle = Math.atan2(target.y - this.y, target.x - this.x);
+                this.x += Math.cos(angle) * this.speed;
+                this.y += Math.sin(angle) * this.speed;
+
+                // Melee bite attack
+                if (minDist < this.radius + target.radius) {
+                    target.hp -= 0.4;
+                    if (Math.random() < 0.1) sound.playZombieGroan();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                ctx.fillStyle = '#22c55e'; // Zombie Green
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#15803d';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Eyes
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(-3, -3, 2, 0, Math.PI * 2);
+                ctx.arc(3, -3, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // ==========================================
+        // Meteor Class (Event: Meteor Shower)
+        // ==========================================
+        class Meteor {
+            constructor(targetX, targetY) {
+                this.targetX = targetX;
+                this.targetY = targetY;
+                this.radius = 45;
+                this.timer = 1.5; // 1.5 sec warning circle
+                this.crashed = false;
+            }
+
+            update(dt) {
+                if (this.crashed) return;
+                this.timer -= dt;
+
+                if (this.timer <= 0) {
+                    this.crashed = true;
+                    screenShake = 15;
+                    sound.playExplosion();
+
+                    // Explosive damage splash
+                    createExplosion(this.targetX, this.targetY);
+
+                    // Damage Player
+                    if (Math.hypot(player.x - this.targetX, player.y - this.targetY) < this.radius + player.radius) {
+                        player.hp -= 45;
+                        addFloatingText(player.x, player.y, "-45 HP", "#ef4444");
+                    }
+
+                    // Damage AI Enemies
+                    for (let e of enemies) {
+                        if (Math.hypot(e.x - this.targetX, e.y - this.targetY) < this.radius + e.radius) {
+                            e.hp -= 60;
+                            addFloatingText(e.x, e.y, "-60 HP", "#f97316");
+                        }
+                    }
+
+                    // Damage Zombies
+                    for (let z of zombies) {
+                        if (Math.hypot(z.x - this.targetX, z.y - this.targetY) < this.radius + z.radius) {
+                            z.hp = 0;
+                        }
+                    }
+                }
+            }
+
+            draw() {
+                if (this.crashed) return;
+
+                ctx.save();
+                ctx.translate(this.targetX, this.targetY);
+
+                // Warning target indicator
+                ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + Math.sin(Date.now() * 0.01) * 0.3})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // ==========================================
+        // Air Drop Supply Class (Event: Air Drop)
+        // ==========================================
+        class AirDrop {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // 'HEALTH' or 'AMMO'
+                this.radius = 16;
+                this.collected = false;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                ctx.fillStyle = this.type === 'HEALTH' ? '#10b981' : '#f59e0b';
+                ctx.beginPath();
+                ctx.roundRect(-14, -14, 28, 28, 6);
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type === 'HEALTH' ? 'HP+' : 'MAG+', 0, 0);
+
+                ctx.restore();
+            }
+        }
+
+        // ==========================================
+        // Bullet & Particle Classes
+        // ==========================================
+        class Bullet {
+            constructor(x, y, angle, isPlayer) {
+                this.x = x; this.y = y; this.angle = angle;
+                this.speed = isPlayer ? 10 : 7;
+                this.isPlayer = isPlayer;
+                this.radius = 4;
+                this.markedForDeletion = false;
+                this.life = 120;
+            }
+
+            update() {
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+                this.life--;
+                if (this.life <= 0 || this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.markedForDeletion = true;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.fillStyle = this.isPlayer ? '#38bdf8' : '#f87171';
+                ctx.shadowColor = this.isPlayer ? '#0284c7' : '#dc2626';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, vx, vy, color, size, maxLife) {
+                this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+                this.color = color; this.size = size;
+                this.life = maxLife; this.maxLife = maxLife;
+            }
+
+            update() {
+                this.x += this.vx; this.y += this.vy; this.life--;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function createMuzzleFlash(x, y, angle) {
+            for (let i = 0; i < 8; i++) {
+                const spread = angle + (Math.random() - 0.5) * 0.8;
+                const speed = Math.random() * 4 + 2;
+                particles.push(new Particle(x, y, Math.cos(spread) * speed, Math.sin(spread) * speed, '#fbbf24', Math.random() * 3 + 2, 12));
+            }
+        }
+
+        function createExplosion(x, y) {
+            sound.playExplosion();
+            for (let i = 0; i < 35; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 6 + 1;
+                const color = ['#ef4444', '#f97316', '#fbbf24', '#475569'][Math.floor(Math.random() * 4)];
+                particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, color, Math.random() * 5 + 3, 30 + Math.random() * 20));
+            }
+        }
+
+        function drawCrosshair() {
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+
+            ctx.beginPath();
+            ctx.arc(mouse.x, mouse.y, 16, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = '#06b6d4';
+            ctx.beginPath();
+            ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(mouse.x - 24, mouse.y); ctx.lineTo(mouse.x - 8, mouse.y);
+            ctx.moveTo(mouse.x + 8, mouse.y);  ctx.lineTo(mouse.x + 24, mouse.y);
+            ctx.moveTo(mouse.x, mouse.y - 24); ctx.lineTo(mouse.x, mouse.y - 8);
+            ctx.moveTo(mouse.x, mouse.y + 8);  ctx.lineTo(mouse.x, mouse.y + 24);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // Random Events Generator
+        // ==========================================
+        function triggerRandomEvent() {
+            const eventTypes = ['ZOMBIES', 'METEOR', 'AIRDROP', 'SANDSTORM', 'EMP'];
+            currentEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+            eventDurationTimer = 10.0; // Event lasts 10s
+            sound.playEventAlert();
+
+            eventBanner.classList.remove('opacity-0', 'translate-y-[-10px]');
+            eventBanner.classList.add('opacity-100', 'translate-y-0');
+
+            if (currentEvent === 'ZOMBIES') {
+                eventIcon.innerText = '🧟';
+                eventText.innerText = '隨機事件：殭屍爆發 ZOMBIE OUTBREAK!';
+                showAlert("🧟 警告：大量殭屍湧入戰場！");
+                for (let i = 0; i < 12; i++) {
+                    const zx = Math.random() < 0.5 ? 20 : canvas.width - 20;
+                    const zy = Math.random() * canvas.height;
+                    zombies.push(new Zombie(zx, zy));
+                }
+            } else if (currentEvent === 'METEOR') {
+                eventIcon.innerText = '☄️';
+                eventText.innerText = '隨機事件：隕石雨來襲 METEOR SHOWER!';
+                showAlert("☄️ 警告：區域降下隕石雨！避開紅圈！");
+                for (let i = 0; i < 6; i++) {
+                    const mx = Math.random() * (canvas.width - 100) + 50;
+                    const my = Math.random() * (canvas.height - 100) + 50;
+                    meteors.push(new Meteor(mx, my));
+                }
+            } else if (currentEvent === 'AIRDROP') {
+                eventIcon.innerText = '📦';
+                eventText.innerText = '隨機事件：空投補給 AIR DROP!';
+                showAlert("📦 補給箱已空投至戰場！");
+                airDrops.push(new AirDrop(canvas.width * 0.3, canvas.height * 0.4, 'HEALTH'));
+                airDrops.push(new AirDrop(canvas.width * 0.7, canvas.height * 0.6, 'AMMO'));
+            } else if (currentEvent === 'SANDSTORM') {
+                eventIcon.innerText = '🌪️';
+                eventText.innerText = '隨機事件：特大沙塵暴 SANDSTORM!';
+                showAlert("🌪️ 沙塵暴侵襲！視野與車速降低！");
+            } else if (currentEvent === 'EMP') {
+                eventIcon.innerText = '⚡';
+                eventText.innerText = '隨機事件：EMP 電磁脈衝 EMP BLAST!';
+                showAlert("⚡ 警告：EMP 癱瘓所有坦克砲塔5秒！");
+            }
+        }
+
+        function clearCurrentEvent() {
+            currentEvent = null;
+            eventBanner.classList.remove('opacity-100', 'translate-y-0');
+            eventBanner.classList.add('opacity-0', 'translate-y-[-10px]');
+        }
+
+        // ==========================================
+        // Game State & Timer Engine
+        // ==========================================
+        let player = new PlayerTank(canvas.width / 2, canvas.height / 2);
+
+        function spawnEnemies() {
+            enemies = [];
+            for (let i = 0; i < 6; i++) {
+                let ex, ey;
+                do {
+                    ex = Math.random() * (canvas.width - 100) + 50;
+                    ey = Math.random() * (canvas.height - 100) + 50;
+                } while (Math.hypot(ex - player.x, ey - player.y) < 250);
+                enemies.push(new AITank(ex, ey));
+            }
+        }
+
+        function startMatchTimer() {
+            clearInterval(matchInterval);
+            matchTimerSeconds = MATCH_DURATION;
+
+            matchInterval = setInterval(() => {
+                if (gameState !== 'PLAYING') return;
+
+                matchTimerSeconds--;
+                const mins = Math.floor(matchTimerSeconds / 60).toString().padStart(2, '0');
+                const secs = (matchTimerSeconds % 60).toString().padStart(2, '0');
+                matchTimerEl.innerText = `${mins}:${secs}`;
+
+                if (matchTimerSeconds <= 0) {
+                    clearInterval(matchInterval);
+                    gameState = 'VICTORY';
+                    showEndScreen(true, "時間到！戰術生存成功！ TIME'S UP!");
+                }
+            }, 1000);
+        }
+
+        function initGame() {
+            sound.init();
+            player = new PlayerTank(canvas.width / 2, canvas.height / 2);
+            bullets = []; particles = []; zombies = []; meteors = []; airDrops = []; treadMarks = []; floatingTexts = [];
+            score = 0; eventTimer = 0; clearCurrentEvent();
+            spawnEnemies();
+            startMatchTimer();
+            gameState = 'PLAYING';
+            modalOverlay.classList.add('hidden');
+            showAlert("2分鐘極限戰鬥開始！");
+        }
+
+        function updateHUD() {
+            ammoValEl.innerText = player.ammoInMag;
+            magCountEl.innerText = `${player.magsLeft + (player.ammoInMag > 0 ? 1 : 0)} / ${MAX_MAGS}`;
+            
+            const hpPct = Math.max(0, (player.hp / PLAYER_MAX_HP) * 100);
+            hpBarEl.style.width = `${hpPct}%`;
+            hpValTextEl.innerText = `${Math.max(0, Math.ceil(player.hp))} / ${PLAYER_MAX_HP}`;
+
+            scoreValEl.innerText = score;
+            enemyCountValEl.innerText = enemies.length;
+        }
+
+        // ==========================================
+        // Event Listeners
+        // ==========================================
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === 't' || e.key === 'T') {
+                showShootBtn = !showShootBtn;
+                fireBtn.classList.toggle('hidden', !showShootBtn);
+            }
+            if ((e.key === 'r' || e.key === 'R') && gameState === 'PLAYING') {
+                player.reload();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+        window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#uiOverlay') && !e.target.closest('#gameCanvas')) return;
+            if (gameState === 'PLAYING') player.shoot();
+        });
+
+        fireBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (gameState === 'PLAYING') player.shoot();
+        });
+
+        startBtn.addEventListener('click', initGame);
+
+        // ==========================================
+        // Main Loop
+        // ==========================================
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+            lastTime = timestamp;
+
+            ctx.save();
+            if (screenShake > 0) {
+                const rx = (Math.random() - 0.5) * screenShake;
+                const ry = (Math.random() - 0.5) * screenShake;
+                ctx.translate(rx, ry);
+                screenShake *= 0.9;
+                if (screenShake < 0.5) screenShake = 0;
+            }
+
+            // Draw Terrain Ground
+            ctx.fillStyle = (currentEvent === 'SANDSTORM') ? '#78350f' : '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid lines
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.2)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 60) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 60) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            if (gameState === 'PLAYING') {
+                // Event Timers
+                eventTimer += dt;
+                if (eventTimer >= nextEventTime) {
+                    eventTimer = 0;
+                    nextEventTime = 15 + Math.random() * 5; // 15-20 sec interval
+                    triggerRandomEvent();
+                }
+
+                if (currentEvent) {
+                    eventDurationTimer -= dt;
+                    if (eventDurationTimer <= 0) clearCurrentEvent();
+                }
+
+                // Update Player
+                player.update(dt);
+
+                // Update AI Enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    enemy.update(dt, player);
+                    enemy.draw();
+
+                    if (enemy.hp <= 0) {
+                        createExplosion(enemy.x, enemy.y);
+                        enemies.splice(i, 1);
+                        score += 100;
+                        addFloatingText(enemy.x, enemy.y, "+100 SCORE", "#38bdf8");
+                    }
+                }
+
+                // Spawn Extra Enemies if depleted
+                if (enemies.length < 3) {
+                    spawnEnemies();
+                }
+
+                // Update Zombies
+                for (let i = zombies.length - 1; i >= 0; i--) {
+                    const z = zombies[i];
+                    z.update(player, enemies);
+                    z.draw();
+                    if (z.hp <= 0) {
+                        zombies.splice(i, 1);
+                        score += 25;
+                        addFloatingText(z.x, z.y, "+25", "#22c55e");
+                    }
+                }
+
+                // Update Meteors
+                for (let i = meteors.length - 1; i >= 0; i--) {
+                    const m = meteors[i];
+                    m.update(dt);
+                    m.draw();
+                    if (m.crashed) meteors.splice(i, 1);
+                }
+
+                // Update Air Drops
+                for (let i = airDrops.length - 1; i >= 0; i--) {
+                    const ad = airDrops[i];
+                    ad.draw();
+
+                    if (Math.hypot(player.x - ad.x, player.y - ad.y) < player.radius + ad.radius) {
+                        if (ad.type === 'HEALTH') {
+                            player.hp = Math.min(PLAYER_MAX_HP, player.hp + 50);
+                            showAlert("💚 獲得健康補給 +50 HP!");
+                            addFloatingText(player.x, player.y, "+50 HP", "#10b981");
+                        } else {
+                            player.magsLeft = Math.min(MAX_MAGS, player.magsLeft + 2);
+                            showAlert("⚡ 獲得彈夾補給 +2 彈夾!");
+                            addFloatingText(player.x, player.y, "+2 MAGS", "#f59e0b");
+                        }
+                        airDrops.splice(i, 1);
+                    }
+                }
+
+                // Update Bullets
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const b = bullets[i];
+                    b.update();
+                    b.draw();
+
+                    if (b.markedForDeletion) {
+                        bullets.splice(i, 1);
+                        continue;
+                    }
+
+                    if (b.isPlayer) {
+                        // Player Bullet vs Enemies
+                        for (let enemy of enemies) {
+                            if (Math.hypot(b.x - enemy.x, b.y - enemy.y) < enemy.radius + b.radius) {
+                                enemy.hp -= 30;
+                                sound.playHit();
+                                createExplosion(b.x, b.y);
+                                addFloatingText(enemy.x, enemy.y, "-30", "#38bdf8");
+                                b.markedForDeletion = true;
+                                break;
+                            }
+                        }
+
+                        // Player Bullet vs Zombies
+                        for (let z of zombies) {
+                            if (Math.hypot(b.x - z.x, b.y - z.y) < z.radius + b.radius) {
+                                z.hp -= 30;
+                                sound.playHit();
+                                b.markedForDeletion = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        // Enemy Bullet vs Player
+                        if (Math.hypot(b.x - player.x, b.y - player.y) < player.radius + b.radius) {
+                            player.hp -= 15;
+                            sound.playHit();
+                            createExplosion(b.x, b.y);
+                            addFloatingText(player.x, player.y, "-15 HP", "#ef4444");
+                            b.markedForDeletion = true;
+
+                            if (player.hp <= 0) {
+                                player.hp = 0;
+                                gameState = 'GAMEOVER';
+                                showEndScreen(false, "坦克被擊毀！ TANK DESTROYED!");
+                            }
+                        }
+                    }
+                }
+
+                // Draw Player Tank
+                player.draw();
+
+                // Update Particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i]; p.update(); p.draw();
+                    if (p.life <= 0) particles.splice(i, 1);
+                }
+
+                // Floating Text Overlay
+                for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                    const ft = floatingTexts[i];
+                    ft.y -= 0.8;
+                    ft.life--;
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, ft.life / 40);
+                    ctx.fillStyle = ft.color;
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.fillText(ft.text, ft.x, ft.y);
+                    ctx.restore();
+                    if (ft.life <= 0) floatingTexts.splice(i, 1);
+                }
+
+                // Sandstorm Fog Visual Effect
+                if (currentEvent === 'SANDSTORM') {
+                    ctx.fillStyle = 'rgba(217, 119, 6, 0.25)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+
+                updateHUD();
+            }
+
+            // Crosshair
+            drawCrosshair();
+
+            ctx.restore();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function showEndScreen(isVictory, titleMsg) {
+            clearInterval(matchInterval);
+            modalOverlay.classList.remove('hidden');
+            if (isVictory) {
+                modalTitle.innerText = "MISSION VICTORY!";
+                modalTitle.className = "text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500 mb-2";
+                modalDesc.innerText = `${titleMsg} 你的總得分為: ${score}`;
+                startBtn.innerText = "RESTART MISSION 再玩一次";
+            } else {
+                modalTitle.innerText = "MISSION FAILED!";
+                modalTitle.className = "text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-500 mb-2";
+                modalDesc.innerText = `${titleMsg} 最終得分: ${score}`;
+                startBtn.innerText = "TRY AGAIN 重新開始";
+            }
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
+```
+
+### Summary of New Additions:
+1. **2-Minute Match Timer**: Placed prominently in the top-center HUD counting down from `02:00`.
+2. **Dynamic Random Events**: Triggered automatically every 15–20 seconds:
+   - **殭屍爆發 (Zombie Outbreak)**: Hordes of green zombies swarm tanks and deal melee damage.
+   - **隕石雨 (Meteor Shower)**: Warning target circles appear on screen followed by explosive meteors causing AOE splash damage.
+   - **空投補給 (Air Drop Supply)**: Health (+50 HP) or Ammo Magazine crates land on the battlefield.
+   - **沙塵暴 (Sandstorm)**: Lowers visibility and slows all tank movements.
+   - **EMP 電磁脈衝 (EMP Blast)**: Temporarily disables shooting for 5 seconds.
+3. **Sound & Visual Upgrades**: Added zombie groans, event alert chimes, screen shake, floating damage text numbers, and event banners.
