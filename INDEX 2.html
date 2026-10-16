@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2D Tactical Tank Warfare</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0b0f19;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            background: #111827;
+        }
+        .hud-glass {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+        .hide-cursor {
+            cursor: none;
+        }
+        .hud-text-glow {
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+    </style>
+</head>
+<body class="w-screen h-screen relative overflow-hidden text-white hide-cursor">
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- UI Overlay Layer -->
+    <div id="uiOverlay" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top Header Info HUD -->
+        <div class="flex justify-between items-start w-full pointer-events-auto">
+            <div class="hud-glass rounded-2xl p-3 sm:p-4 flex items-center space-x-4 border border-cyan-500/30">
+                <div>
+                    <div class="text-[10px] sm:text-xs text-cyan-400 font-extrabold uppercase tracking-widest">分數 Score</div>
+                    <div id="scoreVal" class="text-2xl sm:text-3xl font-black text-white hud-text-glow">0</div>
+                </div>
+                <div class="h-8 w-px bg-slate-700"></div>
+                <div>
+                    <div class="text-[10px] sm:text-xs text-amber-400 font-extrabold uppercase tracking-widest">剩餘敵軍 Enemies</div>
+                    <div id="enemyCountVal" class="text-2xl sm:text-3xl font-black text-white">0</div>
+                </div>
+            </div>
+
+            <!-- Controls Info Card -->
+            <div class="hud-glass rounded-2xl p-3 sm:p-4 text-right hidden md:block border border-slate-700/50">
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">控制按鍵 Settings</div>
+                <div class="text-xs text-cyan-300 font-mono space-y-0.5">
+                    <div><b class="text-white">W</b> 前進 | <b class="text-white">S</b> 後退</div>
+                    <div><b class="text-white">P</b> 左轉 | <b class="text-white">Q</b> 右轉</div>
+                    <div><b class="text-white">T</b> 開啟/關閉射擊鈕 | <b class="text-white">R</b> 換彈夾</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Banner Alert Notification -->
+        <div id="notifyBanner" class="self-center px-6 py-2 rounded-full hud-glass text-cyan-300 font-black text-sm sm:text-base opacity-0 transition-all duration-300 border border-cyan-500/50 transform translate-y-[-10px]">
+            SYSTEM READY
+        </div>
+
+        <!-- Bottom HUD System (Aligned to Requirements) -->
+        <div class="flex justify-between items-end w-full pointer-events-auto">
+            
+            <!-- Left Side: Ammo Display & Fire Button (Placed beside ammo display) -->
+            <div class="flex items-end space-x-3">
+                
+                <!-- Bottom Left Ammo Display -->
+                <div class="hud-glass rounded-2xl p-4 min-w-[170px] border border-cyan-500/30">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">彈夾 Magazines</span>
+                        <span id="magCount" class="text-xs font-black text-amber-400">5 / 5</span>
+                    </div>
+                    
+                    <div class="flex items-baseline space-x-1">
+                        <span id="ammoVal" class="text-4xl font-black text-cyan-400 hud-text-glow">20</span>
+                        <span class="text-slate-500 text-lg font-bold">/ 20</span>
+                    </div>
+
+                    <!-- Reload Bar -->
+                    <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-700 relative">
+                        <div id="reloadBar" class="bg-cyan-400 h-full w-full transition-all duration-75"></div>
+                    </div>
+                    <div id="reloadStatus" class="text-[10px] text-slate-400 mt-1 text-center font-mono">PRESS 'R' TO RELOAD</div>
+                </div>
+
+                <!-- Beside Bottom-Left: Interactive Shoot Button (Toggleable via 'T') -->
+                <button id="fireBtn" class="hud-glass hover:bg-red-500/20 active:scale-95 transition-all p-4 sm:p-5 rounded-2xl border-2 border-red-500/60 flex flex-col items-center justify-center cursor-pointer shadow-lg shadow-red-500/10 group select-none">
+                    <div class="w-10 h-10 rounded-full border-2 border-red-500 flex items-center justify-center bg-red-500/20 group-hover:bg-red-500 transition-colors">
+                        <div class="w-4 h-4 bg-red-500 rounded-full group-hover:bg-white transition-colors"></div>
+                    </div>
+                    <span id="fireBtnLabel" class="text-xs font-black text-red-400 mt-1 tracking-wider uppercase">射擊 (T)</span>
+                </button>
+            </div>
+
+            <!-- Bottom Right: Health Display -->
+            <div class="hud-glass rounded-2xl p-4 w-56 sm:w-64 border border-emerald-500/30">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">坦克裝甲 Health</span>
+                    <span id="hpValText" class="text-xs font-black text-emerald-400">150 / 150</span>
+                </div>
+                
+                <!-- Health Bar Container -->
+                <div class="w-full bg-slate-800 h-4 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                    <div id="hpBar" class="bg-gradient-to-r from-emerald-500 to-green-400 h-full rounded-full w-full transition-all duration-150"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start / Victory / Game Over Modal -->
+    <div id="modalOverlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto">
+        <div class="hud-glass max-w-md w-full rounded-3xl p-6 sm:p-8 text-center border border-cyan-500/40 shadow-2xl">
+            <div class="w-16 h-16 bg-cyan-500/10 border-2 border-cyan-400 rounded-2xl mx-auto flex items-center justify-center mb-4">
+                <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+
+            <h1 id="modalTitle" class="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 mb-2">2D 裝甲坦克大戰</h1>
+            <p id="modalDesc" class="text-slate-300 text-xs sm:text-sm mb-6">消滅所有敵方坦克並獲得勝利！</p>
+            
+            <div class="bg-slate-900/80 rounded-2xl p-4 mb-6 text-left text-xs text-slate-300 space-y-1.5 border border-slate-800 font-mono">
+                <div class="font-bold text-cyan-400 mb-2 border-b border-slate-800 pb-1 flex justify-between">
+                    <span>遊戲規則 & 控制說明</span>
+                    <span class="text-slate-500">v1.0</span>
+                </div>
+                <div class="flex justify-between"><span class="text-slate-400">• 前進 / 後退:</span> <span class="text-white font-bold">W / S</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 左轉 / 右轉:</span> <span class="text-white font-bold">P / Q</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 顯示/隱藏射擊鈕:</span> <span class="text-white font-bold">T 鍵</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 手動補充彈夾:</span> <span class="text-white font-bold">R 鍵</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 初始血量:</span> <span class="text-emerald-400 font-bold">150 HP</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 彈藥規格:</span> <span class="text-amber-400 font-bold">20發/夾 (共5夾)</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• 玩家裝彈時間:</span> <span class="text-cyan-400 font-bold">0.5 秒</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">• AI 狂暴裝彈:</span> <span class="text-red-400 font-bold">5 秒 (會亂射)</span></div>
+            </div>
+
+            <button id="startBtn" class="w-full py-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-lg rounded-2xl shadow-lg shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer">
+                開始戰鬥 START MISSION
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Logic & Graphics Engine -->
+    <script>
+        // ==========================================
+        // Web Audio Synthesizer Engine
+        // ==========================================
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playShoot() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(320, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.12);
+                
+                gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.12);
+            }
+
+            playExplosion() {
+                if (!this.ctx) return;
+                const dur = 0.4;
+                const bufferSize = this.ctx.sampleRate * dur;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(600, this.ctx.currentTime);
+                filter.frequency.linearRampToValueAtTime(40, this.ctx.currentTime + dur);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start();
+            }
+
+            playReload() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(500, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(800, this.ctx.currentTime + 0.15);
+
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playHit() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.08);
+
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.08);
+            }
+        }
+
+        const sound = new SoundEngine();
+
+        // ==========================================
+        // Game Application & State Manager
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Inputs & Keys
+        const keys = {};
+        const mouse = { x: 0, y: 0, down: false };
+
+        // Game Configuration
+        const PLAYER_MAX_HP = 150;
+        const MAG_CAPACITY = 20;
+        const MAX_MAGS = 5;
+        const PLAYER_RELOAD_TIME = 0.5; // 0.5 sec
+        const AI_RELOAD_TIME = 5.0;      // 5.0 sec
+        const TOTAL_ENEMIES = 6;
+
+        let gameState = 'START'; // 'START', 'PLAYING', 'GAMEOVER', 'VICTORY'
+        let lastTime = 0;
+        let score = 0;
+        let showShootBtn = true;
+
+        // Visual Particles & Effects
+        let particles = [];
+        let bullets = [];
+        let enemies = [];
+        let treadMarks = [];
+
+        // DOM Elements
+        const ammoValEl = document.getElementById('ammoVal');
+        const magCountEl = document.getElementById('magCount');
+        const reloadBarEl = document.getElementById('reloadBar');
+        const reloadStatusEl = document.getElementById('reloadStatus');
+        const hpBarEl = document.getElementById('hpBar');
+        const hpValTextEl = document.getElementById('hpValText');
+        const scoreValEl = document.getElementById('scoreVal');
+        const enemyCountValEl = document.getElementById('enemyCountVal');
+        const fireBtn = document.getElementById('fireBtn');
+        const notifyBanner = document.getElementById('notifyBanner');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalDesc = document.getElementById('modalDesc');
+        const startBtn = document.getElementById('startBtn');
+
+        // Canvas Sizing
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Banner Alert Helper
+        let alertTimeout = null;
+        function showAlert(msg) {
+            notifyBanner.innerText = msg;
+            notifyBanner.classList.remove('opacity-0', 'translate-y-[-10px]');
+            notifyBanner.classList.add('opacity-100', 'translate-y-0');
+            clearTimeout(alertTimeout);
+            alertTimeout = setTimeout(() => {
+                notifyBanner.classList.remove('opacity-100', 'translate-y-0');
+                notifyBanner.classList.add('opacity-0', 'translate-y-[-10px]');
+            }, 1800);
+        }
+
+        // ==========================================
+        // Player Tank Class
+        // ==========================================
+        class PlayerTank {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 22;
+                this.angle = 0; // Body heading angle
+                this.turretAngle = 0;
+                this.speed = 0;
+                this.maxSpeed = 3.2;
+                this.turnSpeed = 0.055; // P/Q turn rate
+                this.hp = PLAYER_MAX_HP;
+
+                // Ammo System
+                this.ammoInMag = MAG_CAPACITY;
+                this.magsLeft = MAX_MAGS - 1; // 1 loaded + 4 spare = 5 mags
+                this.isReloading = false;
+                this.reloadTimer = 0;
+            }
+
+            update(dt) {
+                // Movement handling (W: forward, S: backward)
+                if (keys['w'] || keys['W']) {
+                    this.speed = Math.min(this.speed + 0.2, this.maxSpeed);
+                } else if (keys['s'] || keys['S']) {
+                    this.speed = Math.max(this.speed - 0.2, -this.maxSpeed * 0.6);
+                } else {
+                    this.speed *= 0.88; // Friction
+                }
+
+                // Turning controls (P: Turn Left, Q: Turn Right as requested)
+                if (keys['p'] || keys['P']) {
+                    this.angle -= this.turnSpeed;
+                }
+                if (keys['q'] || keys['Q']) {
+                    this.angle += this.turnSpeed;
+                }
+
+                // Update position
+                const prevX = this.x;
+                const prevY = this.y;
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+
+                // Canvas boundaries clamp
+                this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+
+                // Add tread marks on movement
+                if (Math.abs(this.speed) > 0.5) {
+                    if (Math.random() < 0.4) {
+                        treadMarks.push({
+                            x: this.x,
+                            y: this.y,
+                            angle: this.angle,
+                            alpha: 0.4,
+                            life: 200
+                        });
+                    }
+                }
+
+                // Turret pointing towards Mouse Crosshair
+                this.turretAngle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+
+                // Reload System Update
+                if (this.isReloading) {
+                    this.reloadTimer += dt;
+                    const progress = Math.min(this.reloadTimer / PLAYER_RELOAD_TIME, 1.0);
+                    reloadBarEl.style.width = `${progress * 100}%`;
+                    reloadStatusEl.innerText = `RELOADING... (${(PLAYER_RELOAD_TIME - this.reloadTimer).toFixed(1)}s)`;
+
+                    if (this.reloadTimer >= PLAYER_RELOAD_TIME) {
+                        this.isReloading = false;
+                        this.ammoInMag = MAG_CAPACITY;
+                        reloadStatusEl.innerText = "READY";
+                        reloadBarEl.style.width = "100%";
+                        showAlert("彈夾裝填完成！ READY!");
+                    }
+                }
+            }
+
+            reload() {
+                if (this.isReloading) return;
+                if (this.ammoInMag === MAG_CAPACITY) {
+                    showAlert("彈夾已滿！ Magazine Full!");
+                    return;
+                }
+                if (this.magsLeft <= 0) {
+                    showAlert("已無備用彈夾！ Out of Spare Mags!");
+                    return;
+                }
+
+                this.magsLeft--;
+                this.isReloading = true;
+                this.reloadTimer = 0;
+                sound.playReload();
+                showAlert("開始裝彈... Reloading...");
+            }
+
+            shoot() {
+                if (this.isReloading) return;
+
+                if (this.ammoInMag <= 0) {
+                    if (this.magsLeft > 0) {
+                        this.reload();
+                    } else {
+                        showAlert("彈藥耗盡！ NO AMMO!");
+                    }
+                    return;
+                }
+
+                // Fire bullet
+                this.ammoInMag--;
+                sound.playShoot();
+
+                const muzzleDist = 32;
+                const bx = this.x + Math.cos(this.turretAngle) * muzzleDist;
+                const by = this.y + Math.sin(this.turretAngle) * muzzleDist;
+
+                bullets.push(new Bullet(bx, by, this.turretAngle, true));
+
+                // Muzzle Flash Particle Effect
+                createMuzzleFlash(bx, by, this.turretAngle);
+
+                // Auto-reload trigger when magazine hits 0
+                if (this.ammoInMag === 0 && this.magsLeft > 0) {
+                    this.reload();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                // Draw Tank Body
+                ctx.rotate(this.angle);
+
+                // Treads
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(-22, -18, 44, 8);
+                ctx.fillRect(-22, 10, 44, 8);
+
+                // Chassis Body
+                ctx.fillStyle = '#0284c7'; // Cyan Military Blue
+                ctx.beginPath();
+                ctx.roundRect(-20, -13, 40, 26, 6);
+                ctx.fill();
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.restore();
+
+                // Draw Turret (rotates towards crosshair)
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.turretAngle);
+
+                // Cannon Barrel
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, -4, 28, 8);
+                ctx.strokeStyle = '#38bdf8';
+                ctx.strokeRect(0, -4, 28, 8);
+
+                // Turret Dome
+                ctx.fillStyle = '#0369a1';
+                ctx.beginPath();
+                ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#7dd3fc';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        // ==========================================
+        // AI Tank Class ("Wild AI" - Wild Shooting & 5s Reload)
+        // ==========================================
+        class AITank {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20;
+                this.angle = Math.random() * Math.PI * 2;
+                this.turretAngle = this.angle;
+                this.speed = 1.8;
+                this.hp = 60;
+                
+                this.reloadTimer = 0;
+                this.moveTimer = 0;
+                this.targetAngle = this.angle;
+
+                // Wild Shooting Timer (5s reload rate specified)
+                this.shootCooldown = Math.random() * AI_RELOAD_TIME; 
+            }
+
+            update(dt, player) {
+                // Wandering Logic
+                this.moveTimer += dt;
+                if (this.moveTimer > 2.0) {
+                    this.moveTimer = 0;
+                    this.targetAngle = this.angle + (Math.random() - 0.5) * 2.5;
+                }
+
+                // Smooth rotation towards target wandering direction
+                this.angle += (this.targetAngle - this.angle) * 0.05;
+
+                // Move forward
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+
+                // Bounce off canvas boundaries
+                if (this.x < 40 || this.x > canvas.width - 40) {
+                    this.angle = Math.PI - this.angle;
+                    this.targetAngle = this.angle;
+                }
+                if (this.y < 40 || this.y > canvas.height - 40) {
+                    this.angle = -this.angle;
+                    this.targetAngle = this.angle;
+                }
+
+                // Wild AI Shooting Logic (Fires in random directions or towards player with wild dispersion)
+                this.shootCooldown += dt;
+
+                // Turret wild rotation
+                this.turretAngle += 0.03;
+
+                if (this.shootCooldown >= AI_RELOAD_TIME) {
+                    this.shootCooldown = 0;
+
+                    // "ai會亂射" (AI shoots wildly in random or semi-random directions)
+                    let wildAimAngle;
+                    if (Math.random() < 0.5) {
+                        // Completely random angle wild shot
+                        wildAimAngle = Math.random() * Math.PI * 2;
+                    } else {
+                        // Aim generally towards player with huge random spray angle
+                        const angleToPlayer = Math.atan2(player.y - this.y, player.x - this.x);
+                        wildAimAngle = angleToPlayer + (Math.random() - 0.5) * 1.8; 
+                    }
+
+                    this.turretAngle = wildAimAngle;
+
+                    // Fire AI Bullet
+                    const bx = this.x + Math.cos(wildAimAngle) * 25;
+                    const by = this.y + Math.sin(wildAimAngle) * 25;
+                    bullets.push(new Bullet(bx, by, wildAimAngle, false));
+                    sound.playShoot();
+                    createMuzzleFlash(bx, by, wildAimAngle);
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                // Body
+                ctx.rotate(this.angle);
+                ctx.fillStyle = '#450a0a';
+                ctx.fillRect(-18, -14, 36, 6);
+                ctx.fillRect(-18, 8, 36, 6);
+
+                ctx.fillStyle = '#dc2626'; // Red Enemy Tank
+                ctx.beginPath();
+                ctx.roundRect(-16, -10, 32, 20, 4);
+                ctx.fill();
+                ctx.strokeStyle = '#fca5a5';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                ctx.restore();
+
+                // Turret
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.turretAngle);
+
+                ctx.fillStyle = '#18181b';
+                ctx.fillRect(0, -3, 22, 6);
+
+                ctx.fillStyle = '#991b1b';
+                ctx.beginPath();
+                ctx.arc(0, 0, 9, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+
+                // AI HP Bar Above Tank
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(this.x - 18, this.y - 25, 36, 5);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(this.x - 18, this.y - 25, (this.hp / 60) * 36, 5);
+            }
+        }
+
+        // ==========================================
+        // Bullet Class
+        // ==========================================
+        class Bullet {
+            constructor(x, y, angle, isPlayer) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.speed = isPlayer ? 10 : 7;
+                this.isPlayer = isPlayer;
+                this.radius = 4;
+                this.markedForDeletion = false;
+                this.life = 120; // lifespan in frames
+            }
+
+            update() {
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+
+                this.life--;
+                if (this.life <= 0) this.markedForDeletion = true;
+
+                // Canvas edge destruction
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.markedForDeletion = true;
+                }
+
+                // Add smoke trail
+                if (Math.random() < 0.6) {
+                    particles.push(new Particle(this.x, this.y, 0, 0, '#94a3b8', 2, 20));
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.fillStyle = this.isPlayer ? '#38bdf8' : '#f87171';
+                ctx.shadowColor = this.isPlayer ? '#0284c7' : '#dc2626';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // ==========================================
+        // Particle System
+        // ==========================================
+        class Particle {
+            constructor(x, y, vx, vy, color, size, maxLife) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.size = size;
+                this.life = maxLife;
+                this.maxLife = maxLife;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function createMuzzleFlash(x, y, angle) {
+            for (let i = 0; i < 8; i++) {
+                const spread = angle + (Math.random() - 0.5) * 0.8;
+                const speed = Math.random() * 4 + 2;
+                particles.push(new Particle(
+                    x, y,
+                    Math.cos(spread) * speed,
+                    Math.sin(spread) * speed,
+                    '#fbbf24', Math.random() * 3 + 2, 12
+                ));
+            }
+        }
+
+        function createExplosion(x, y) {
+            sound.playExplosion();
+            for (let i = 0; i < 35; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 6 + 1;
+                const color = ['#ef4444', '#f97316', '#fbbf24', '#475569'][Math.floor(Math.random() * 4)];
+                particles.push(new Particle(
+                    x, y,
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed,
+                    color, Math.random() * 5 + 3, 30 + Math.random() * 20
+                ));
+            }
+        }
+
+        // Dynamic Crosshair Pointer Drawing Function (瞄準鏡)
+        function drawCrosshair() {
+            const x = mouse.x;
+            const y = mouse.y;
+
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+
+            // Outer Reticle Ring
+            ctx.beginPath();
+            ctx.arc(x, y, 16, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Inner Center Dot
+            ctx.fillStyle = '#06b6d4';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Lead Hair Lines
+            ctx.beginPath();
+            ctx.moveTo(x - 24, y); ctx.lineTo(x - 8, y);
+            ctx.moveTo(x + 8, y);  ctx.lineTo(x + 24, y);
+            ctx.moveTo(x, y - 24); ctx.lineTo(x, y - 8);
+            ctx.moveTo(x, y + 8);  ctx.lineTo(x, y + 24);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // Game Initialization & Instance
+        // ==========================================
+        let player = new PlayerTank(canvas.width / 2, canvas.height / 2);
+
+        function spawnEnemies() {
+            enemies = [];
+            for (let i = 0; i < TOTAL_ENEMIES; i++) {
+                let ex, ey;
+                // Spawn away from player center
+                do {
+                    ex = Math.random() * (canvas.width - 100) + 50;
+                    ey = Math.random() * (canvas.height - 100) + 50;
+                } while (Math.hypot(ex - player.x, ey - player.y) < 250);
+
+                enemies.push(new AITank(ex, ey));
+            }
+        }
+
+        function initGame() {
+            sound.init();
+            player = new PlayerTank(canvas.width / 2, canvas.height / 2);
+            bullets = [];
+            particles = [];
+            treadMarks = [];
+            score = 0;
+            spawnEnemies();
+            gameState = 'PLAYING';
+            modalOverlay.classList.add('hidden');
+            showAlert("任務開始！ 消滅所有敵軍！");
+        }
+
+        // UI Binding Updates
+        function updateHUD() {
+            // Ammo & Mag Counters
+            ammoValEl.innerText = player.ammoInMag;
+            magCountEl.innerText = `${player.magsLeft + (player.ammoInMag > 0 ? 1 : 0)} / ${MAX_MAGS}`;
+            
+            // Health System
+            const hpPct = Math.max(0, (player.hp / PLAYER_MAX_HP) * 100);
+            hpBarEl.style.width = `${hpPct}%`;
+            hpValTextEl.innerText = `${Math.max(0, Math.ceil(player.hp))} / ${PLAYER_MAX_HP}`;
+
+            // Score and Enemy Counters
+            scoreValEl.innerText = score;
+            enemyCountValEl.innerText = enemies.length;
+        }
+
+        // ==========================================
+        // Input Event Listeners
+        // ==========================================
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+
+            // Toggle Shoot Button Visibility on 'T' key
+            if (e.key === 't' || e.key === 'T') {
+                showShootBtn = !showShootBtn;
+                if (showShootBtn) {
+                    fireBtn.classList.remove('hidden');
+                    showAlert("射擊按鈕已開啟 Shoot Button ON");
+                } else {
+                    fireBtn.classList.add('hidden');
+                    showAlert("射擊按鈕已隱藏 Shoot Button OFF");
+                }
+            }
+
+            // Manual Reload on 'R' key
+            if ((e.key === 'r' || e.key === 'R') && gameState === 'PLAYING') {
+                player.reload();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        window.addEventListener('mousedown', (e) => {
+            // Ignore if clicking UI buttons directly
+            if (e.target.closest('#uiOverlay') && !e.target.closest('#gameCanvas')) return;
+            if (gameState === 'PLAYING') {
+                player.shoot();
+            }
+        });
+
+        // Fire Button Trigger
+        fireBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (gameState === 'PLAYING') {
+                player.shoot();
+            }
+        });
+
+        startBtn.addEventListener('click', () => {
+            initGame();
+        });
+
+        // ==========================================
+        // Game Loop Update & Render
+        // ==========================================
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = Math.min((timestamp - lastTime) / 1000, 0.1); // deltaTime in seconds
+            lastTime = timestamp;
+
+            // Clear Background Ground
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Subtle Grid Pattern
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.2)';
+            ctx.lineWidth = 1;
+            const gridSize = 60;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            if (gameState === 'PLAYING') {
+                // Update Entities
+                player.update(dt);
+
+                // Update Tread Marks
+                for (let i = treadMarks.length - 1; i >= 0; i--) {
+                    const tm = treadMarks[i];
+                    tm.life--;
+                    if (tm.life <= 0) {
+                        treadMarks.splice(i, 1);
+                    } else {
+                        ctx.save();
+                        ctx.translate(tm.x, tm.y);
+                        ctx.rotate(tm.angle);
+                        ctx.fillStyle = `rgba(30, 41, 59, ${tm.life / 300})`;
+                        ctx.fillRect(-10, -14, 20, 4);
+                        ctx.fillRect(-10, 10, 20, 4);
+                        ctx.restore();
+                    }
+                }
+
+                // Update AI Enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    enemy.update(dt, player);
+                    enemy.draw();
+
+                    // Check Tank Collisions with Player
+                    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+                    if (dist < enemy.radius + player.radius) {
+                        player.hp -= 0.3; // Collision damage
+                    }
+                }
+
+                // Update Bullets
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const b = bullets[i];
+                    b.update();
+                    b.draw();
+
+                    if (b.markedForDeletion) {
+                        bullets.splice(i, 1);
+                        continue;
+                    }
+
+                    // Player Bullet hitting Enemy
+                    if (b.isPlayer) {
+                        for (let j = enemies.length - 1; j >= 0; j--) {
+                            const enemy = enemies[j];
+                            if (Math.hypot(b.x - enemy.x, b.y - enemy.y) < enemy.radius + b.radius) {
+                                enemy.hp -= 30;
+                                sound.playHit();
+                                createExplosion(b.x, b.y);
+                                b.markedForDeletion = true;
+
+                                if (enemy.hp <= 0) {
+                                    createExplosion(enemy.x, enemy.y);
+                                    enemies.splice(j, 1);
+                                    score += 100;
+                                    showAlert("+100 Enemy Destroyed!");
+                                }
+                                break;
+                            }
+                        }
+                    } else {
+                        // Enemy Bullet hitting Player
+                        if (Math.hypot(b.x - player.x, b.y - player.y) < player.radius + b.radius) {
+                            player.hp -= 15; // Damage per hit
+                            sound.playHit();
+                            createExplosion(b.x, b.y);
+                            b.markedForDeletion = true;
+
+                            if (player.hp <= 0) {
+                                player.hp = 0;
+                                createExplosion(player.x, player.y);
+                                gameState = 'GAMEOVER';
+                                showEndScreen(false);
+                            }
+                        }
+                    }
+                }
+
+                // Draw Player Tank
+                player.draw();
+
+                // Update Particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.update();
+                    p.draw();
+                    if (p.life <= 0) particles.splice(i, 1);
+                }
+
+                // Check Win Condition
+                if (enemies.length === 0) {
+                    gameState = 'VICTORY';
+                    showEndScreen(true);
+                }
+
+                updateHUD();
+            }
+
+            // Draw Aiming Crosshair (瞄準鏡)
+            drawCrosshair();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Show Game Over / Victory Modal
+        function showEndScreen(isVictory) {
+            modalOverlay.classList.remove('hidden');
+            if (isVictory) {
+                modalTitle.innerText = "MISSION VICTORY!";
+                modalTitle.className = "text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500 mb-2";
+                modalDesc.innerText = `恭喜！你成功摧毀了所有敵軍坦克！總得分: ${score}`;
+                startBtn.innerText = "RESTART MISSION 再玩一次";
+            } else {
+                modalTitle.innerText = "TANK DESTROYED!";
+                modalTitle.className = "text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-500 mb-2";
+                modalDesc.innerText = `你的坦克已被摧毀！最終得分: ${score}`;
+                startBtn.innerText = "TRY AGAIN 重新開始";
+            }
+        }
+
+        // Start Loop
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
