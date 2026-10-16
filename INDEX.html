@@ -3,1239 +3,1024 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>2D Tactical Tank Warfare - Chaos Edition</title>
+    <title>3D 第一人稱坦克大戰</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body {
+        body, html {
             margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
-            background-color: #0b0f19;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #030712;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: none;
         }
         canvas {
             display: block;
-            background: #0f172a;
+            width: 100%;
+            height: 100%;
+        }
+        .cockpit-vignette {
+            background: radial-gradient(circle at center, transparent 55%, rgba(0, 20, 10, 0.65) 85%, rgba(0, 10, 5, 0.95) 100%);
+            pointer-events: none;
+        }
+        .scanlines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
         }
         .hud-glass {
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(56, 189, 248, 0.2);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            background: rgba(10, 20, 15, 0.75);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.15);
         }
-        .hide-cursor {
-            cursor: none;
+        .btn-glow {
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+            transition: all 0.15s ease;
         }
-        .hud-text-glow {
-            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        .btn-glow:active {
+            transform: scale(0.95);
+            box-shadow: 0 0 25px rgba(34, 197, 94, 0.8);
         }
-        .event-text-glow {
-            text-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
+        .btn-rapid {
+            box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);
+            transition: all 0.15s ease;
+        }
+        .btn-rapid:active, .btn-rapid.active {
+            box-shadow: 0 0 25px rgba(234, 179, 8, 0.9);
+            background-color: rgba(234, 179, 8, 0.4);
         }
     </style>
 </head>
-<body class="w-screen h-screen relative overflow-hidden text-white hide-cursor">
+<body class="relative w-full h-full text-white">
 
-    <!-- Canvas Engine -->
-    <canvas id="gameCanvas"></canvas>
+    <!-- Render Container -->
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
 
-    <!-- Overlay UI Layer -->
-    <div id="uiOverlay" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6">
-        
-        <!-- Top Section: Score, Timer & Active Event Alert -->
-        <div class="flex justify-between items-start w-full pointer-events-auto">
-            
-            <!-- Left Header: Score & Enemy Counter -->
-            <div class="hud-glass rounded-2xl p-3 sm:p-4 flex items-center space-x-4 border border-cyan-500/30">
-                <div>
-                    <div class="text-[10px] sm:text-xs text-cyan-400 font-extrabold uppercase tracking-widest">分數 Score</div>
-                    <div id="scoreVal" class="text-2xl sm:text-3xl font-black text-white hud-text-glow">0</div>
-                </div>
-                <div class="h-8 w-px bg-slate-700"></div>
-                <div>
-                    <div class="text-[10px] sm:text-xs text-amber-400 font-extrabold uppercase tracking-widest">剩餘敵軍 Enemies</div>
-                    <div id="enemyCountVal" class="text-2xl sm:text-3xl font-black text-white">0</div>
-                </div>
-            </div>
+    <!-- Cockpit & CRT FX Overlays -->
+    <div class="cockpit-vignette absolute inset-0 z-10"></div>
+    <div class="scanlines absolute inset-0 z-10 opacity-30"></div>
 
-            <!-- Center Header: 2-Minute Match Timer & Event Status -->
-            <div class="flex flex-col items-center">
-                <div class="hud-glass rounded-2xl px-6 py-2 border border-amber-500/40 text-center flex flex-col items-center">
-                    <div class="text-[10px] sm:text-xs text-amber-400 font-bold uppercase tracking-widest">剩餘時間 Time Left</div>
-                    <div id="matchTimer" class="text-2xl sm:text-4xl font-black text-amber-300 font-mono tracking-wider">02:00</div>
-                </div>
-                <div id="eventBanner" class="mt-2 px-5 py-1.5 rounded-full hud-glass text-amber-400 font-black text-xs sm:text-sm border border-amber-500/50 transition-all duration-300 opacity-0 transform translate-y-[-10px] flex items-center space-x-2">
-                    <span id="eventIcon">⚡</span>
-                    <span id="eventText" class="event-text-glow">無事件</span>
-                </div>
-            </div>
-
-            <!-- Right Header: Controls Guide -->
-            <div class="hud-glass rounded-2xl p-3 sm:p-4 text-right hidden md:block border border-slate-700/50">
-                <div class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">操作說明 Controls</div>
-                <div class="text-xs text-cyan-300 font-mono space-y-0.5">
-                    <div><b class="text-white">W</b> 前進 | <b class="text-white">S</b> 後退</div>
-                    <div><b class="text-white">P</b> 左轉 | <b class="text-white">Q</b> 右轉</div>
-                    <div><b class="text-white">T</b> 顯示/隱藏射擊鈕 | <b class="text-white">R</b> 換彈夾</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Center Notification Banner -->
-        <div id="notifyBanner" class="self-center px-6 py-2 rounded-full hud-glass text-cyan-300 font-black text-sm sm:text-base opacity-0 transition-all duration-300 border border-cyan-500/50 transform translate-y-[-10px]">
-            SYSTEM READY
-        </div>
-
-        <!-- Bottom HUD System -->
-        <div class="flex justify-between items-end w-full pointer-events-auto">
-            
-            <!-- Left Side: Ammo Box & Interactive Shoot Button -->
-            <div class="flex items-end space-x-3">
-                
-                <!-- Bottom-Left Ammo HUD -->
-                <div class="hud-glass rounded-2xl p-4 min-w-[170px] border border-cyan-500/30">
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">彈夾 Magazines</span>
-                        <span id="magCount" class="text-xs font-black text-amber-400">5 / 5</span>
-                    </div>
-                    
-                    <div class="flex items-baseline space-x-1">
-                        <span id="ammoVal" class="text-4xl font-black text-cyan-400 hud-text-glow">20</span>
-                        <span class="text-slate-500 text-lg font-bold">/ 20</span>
-                    </div>
-
-                    <!-- Reload Bar -->
-                    <div class="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-700 relative">
-                        <div id="reloadBar" class="bg-cyan-400 h-full w-full transition-all duration-75"></div>
-                    </div>
-                    <div id="reloadStatus" class="text-[10px] text-slate-400 mt-1 text-center font-mono">按 'R' 或擊發自動裝彈</div>
-                </div>
-
-                <!-- Beside Ammo Box: Fire Button (Toggle with 'T') -->
-                <button id="fireBtn" class="hud-glass hover:bg-red-500/20 active:scale-95 transition-all p-4 sm:p-5 rounded-2xl border-2 border-red-500/60 flex flex-col items-center justify-center cursor-pointer shadow-lg shadow-red-500/10 group select-none">
-                    <div class="w-10 h-10 rounded-full border-2 border-red-500 flex items-center justify-center bg-red-500/20 group-hover:bg-red-500 transition-colors">
-                        <div class="w-4 h-4 bg-red-500 rounded-full group-hover:bg-white transition-colors"></div>
-                    </div>
-                    <span id="fireBtnLabel" class="text-xs font-black text-red-400 mt-1 tracking-wider uppercase">射擊 (T)</span>
-                </button>
-            </div>
-
-            <!-- Bottom Right: Player Health HUD -->
-            <div class="hud-glass rounded-2xl p-4 w-56 sm:w-64 border border-emerald-500/30">
-                <div class="flex justify-between items-center mb-1">
-                    <span class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">坦克裝甲 Health</span>
-                    <span id="hpValText" class="text-xs font-black text-emerald-400">150 / 150</span>
-                </div>
-                
-                <!-- Health Progress Bar -->
-                <div class="w-full bg-slate-800 h-4 rounded-full overflow-hidden p-0.5 border border-slate-700">
-                    <div id="hpBar" class="bg-gradient-to-r from-emerald-500 to-green-400 h-full rounded-full w-full transition-all duration-150"></div>
-                </div>
-            </div>
+    <!-- 3D Crosshair Overlay -->
+    <div class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+        <div class="relative w-20 h-20 flex items-center justify-center">
+            <!-- Center dot -->
+            <div class="w-1.5 h-1.5 bg-green-400 rounded-full shadow-[0_0_8px_#22c55e]"></div>
+            <!-- Outer Ring -->
+            <div class="absolute inset-0 border-2 border-green-500/50 rounded-full border-dashed animate-spin" style="animation-duration: 20s;"></div>
+            <!-- Cross Lines -->
+            <div class="absolute w-4 h-0.5 bg-green-400 -left-6 top-1/2 -translate-y-1/2"></div>
+            <div class="absolute w-4 h-0.5 bg-green-400 -right-6 top-1/2 -translate-y-1/2"></div>
+            <div class="absolute h-4 w-0.5 bg-green-400 -top-6 left-1/2 -translate-x-1/2"></div>
+            <div class="absolute h-4 w-0.5 bg-green-400 -bottom-6 left-1/2 -translate-x-1/2"></div>
         </div>
     </div>
 
-    <!-- Modal Dialog (Start / Victory / Defeat) -->
-    <div id="modalOverlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50 pointer-events-auto">
-        <div class="hud-glass max-w-md w-full rounded-3xl p-6 sm:p-8 text-center border border-cyan-500/40 shadow-2xl">
-            <div class="w-16 h-16 bg-cyan-500/10 border-2 border-cyan-400 rounded-2xl mx-auto flex items-center justify-center mb-4">
-                <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                </svg>
+    <!-- MAIN HUD UI OVERLAY -->
+    <div id="hud-layer" class="absolute inset-0 z-20 flex flex-col justify-between p-4 md:p-6 pointer-events-none">
+        
+        <!-- Top Bar: Stage Info & Timer & Enemy Radar Count -->
+        <div class="flex justify-between items-start w-full">
+            <!-- Stage Info -->
+            <div class="hud-glass rounded-xl p-3 px-5 border-l-4 border-l-green-500">
+                <div class="text-xs text-green-400 font-mono tracking-widest uppercase">任務狀態 / Stage</div>
+                <div id="stage-text" class="text-xl md:text-2xl font-black text-white tracking-wider">第一關：單機試煉</div>
             </div>
 
-            <h1 id="modalTitle" class="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-amber-400 mb-2">2D 裝甲戰術坦克 - 隨機事件版</h1>
-            <p id="modalDesc" class="text-slate-300 text-xs sm:text-sm mb-6">2分鐘限時戰鬥！應對殭屍、隕石與沙塵暴等動態隨機事件！</p>
+            <!-- Countdown Timer -->
+            <div class="hud-glass rounded-xl p-3 px-6 text-center border-t-2 border-t-green-400">
+                <div class="text-xs text-green-400 font-mono tracking-widest">剩餘時間 TIME</div>
+                <div id="timer-display" class="text-3xl md:text-4xl font-mono font-black text-amber-400">60</div>
+            </div>
+
+            <!-- Enemy & Ally Tracker -->
+            <div class="hud-glass rounded-xl p-3 px-5 text-right border-r-4 border-r-red-500">
+                <div class="text-xs text-red-400 font-mono tracking-widest uppercase">敵方 / 隊友 數量</div>
+                <div class="text-lg md:text-xl font-bold font-mono">
+                    敵軍: <span id="enemy-count" class="text-red-400">1</span> | 盟軍: <span id="ally-count" class="text-green-400">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Message Alert -->
+        <div class="self-center text-center">
+            <div id="alert-banner" class="hidden hud-glass px-8 py-3 rounded-2xl border border-amber-400/50 text-amber-300 font-bold text-lg md:text-2xl animate-pulse">
+                戰鬥警報！
+            </div>
+        </div>
+
+        <!-- Bottom Controls & Stats Bar -->
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 items-end w-full">
             
-            <div class="bg-slate-900/80 rounded-2xl p-4 mb-6 text-left text-xs text-slate-300 space-y-1.5 border border-slate-800 font-mono">
-                <div class="font-bold text-cyan-400 mb-2 border-b border-slate-800 pb-1 flex justify-between">
-                    <span>遊戲規則 & 控制說明</span>
-                    <span class="text-amber-400">2分鐘限時</span>
+            <!-- Bottom Left: Ammo & Shoot Controls (Pointer-events-auto for buttons) -->
+            <div class="flex flex-col gap-2 pointer-events-auto">
+                <div class="hud-glass p-3 md:p-4 rounded-xl flex items-center justify-between">
+                    <div>
+                        <div class="text-xs text-green-400 font-mono">主彈藥主夾 (無限制)</div>
+                        <div class="text-2xl md:text-3xl font-black font-mono text-green-300">
+                            <span id="ammo-count">20</span> <span class="text-xs font-normal text-gray-400">/ 20</span>
+                        </div>
+                        <div class="text-xs text-emerald-400/80 font-mono mt-0.5">彈夾: ∞ (裝彈0.5s)</div>
+                    </div>
+                    <div id="reload-indicator" class="hidden text-xs text-amber-400 font-bold animate-ping">RELOADING</div>
                 </div>
-                <div class="flex justify-between"><span class="text-slate-400">• 移動 (前/後):</span> <span class="text-white font-bold">W / S</span></div>
-                <div class="flex justify-between"><span class="text-slate-400">• 轉向 (左/右):</span> <span class="text-white font-bold">P / Q</span></div>
-                <div class="flex justify-between"><span class="text-slate-400">• 開啟/隱藏射擊鈕:</span> <span class="text-white font-bold">T 鍵</span></div>
-                <div class="flex justify-between"><span class="text-slate-400">• 手動補彈夾:</span> <span class="text-white font-bold">R 鍵</span></div>
-                <div class="flex justify-between"><span class="text-slate-400">• 血量 & 彈藥:</span> <span class="text-emerald-400 font-bold">150 HP | 20發/夾 (5夾)</span></div>
-                <div class="flex justify-between"><span class="text-slate-400">• AI裝彈 & 攻擊:</span> <span class="text-red-400 font-bold">5秒裝彈 (AI會亂射)</span></div>
-                <div class="text-amber-400 font-bold border-t border-slate-800 pt-1.5 mt-2">⚡ 每15-20秒引發隨機事件：</div>
-                <div class="text-slate-400 text-[11px] leading-relaxed">
-                    🧟 <b>殭屍爆發</b> | ☄️ <b>隕石雨</b> | 📦 <b>空投補給</b> | 🌪️ <b>沙塵暴</b> | ⚡ <b>EMP電磁脈衝</b>
+
+                <!-- Action Fire Buttons -->
+                <div class="flex gap-2">
+                    <!-- Main Shoot Button (T) -->
+                    <button id="btn-fire" class="hud-glass btn-glow bg-green-600/60 hover:bg-green-500 text-white font-black py-3 px-4 rounded-xl border border-green-400 flex-1 flex flex-col items-center justify-center cursor-pointer">
+                        <span class="text-base md:text-lg">擊發 [T]</span>
+                        <span class="text-[10px] text-green-200">主砲單發</span>
+                    </button>
+
+                    <!-- NEW SPECIAL "次記" Rapid Fire Button -->
+                    <button id="btn-rapid" class="hud-glass btn-rapid bg-amber-600/60 hover:bg-amber-500 text-amber-100 font-black py-3 px-4 rounded-xl border border-amber-400 flex-1 flex flex-col items-center justify-center cursor-pointer">
+                        <span class="text-base md:text-lg">次記 [R]</span>
+                        <span class="text-[10px] text-amber-200">連射模式(無限)</span>
+                    </button>
                 </div>
             </div>
 
-            <button id="startBtn" class="w-full py-4 bg-gradient-to-r from-cyan-500 via-amber-500 to-red-500 hover:from-cyan-400 hover:to-red-400 text-white font-extrabold text-lg rounded-2xl shadow-lg shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer">
-                開始 2 分鐘極限戰鬥 START
+            <!-- Bottom Center: Control Hint (Desktop & Mobile) -->
+            <div class="hidden md:flex flex-col items-center justify-center hud-glass p-3 rounded-xl text-xs text-gray-300 space-y-1 font-mono">
+                <div class="text-green-400 font-bold mb-1">駕駛控制說明</div>
+                <div>前進: <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">W</span> | 後退: <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">S</span></div>
+                <div>左轉: <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">P</span> / <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">A</span> | 右轉: <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">Q</span> / <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">D</span></div>
+                <div>開火: <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">T</span> | 連射[次記]: <span class="text-white font-bold bg-black/40 px-1.5 py-0.5 rounded">R</span></div>
+                <div>移動滑鼠轉動視角砲塔</div>
+            </div>
+
+            <!-- Bottom Right: Health UI -->
+            <div class="hud-glass p-3 md:p-4 rounded-xl justify-self-end w-full max-w-[220px]">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs text-red-400 font-mono font-bold">裝甲血量 HP</span>
+                    <span id="hp-value" class="text-lg md:text-xl font-black font-mono text-red-300">150 / 150</span>
+                </div>
+                <!-- Health Bar Container -->
+                <div class="w-full bg-gray-900/80 rounded-full h-3 border border-red-500/30 overflow-hidden p-0.5">
+                    <div id="hp-bar" class="bg-gradient-to-r from-red-600 to-emerald-400 h-full rounded-full transition-all duration-200" style="width: 100%;"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- START MODAL / TANK SELECTION MODAL -->
+    <div id="modal-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+        
+        <!-- Welcome / Level 1 Start Box -->
+        <div id="modal-start" class="hud-glass p-6 md:p-8 rounded-2xl max-w-lg w-full text-center border-2 border-green-500/50 space-y-5">
+            <h1 class="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-emerald-200 to-teal-400">
+                3D 第一人稱坦克大戰
+            </h1>
+            <p class="text-sm text-gray-300 leading-relaxed">
+                準備進入第一人稱裝甲駕駛艙！<br>
+                第一關將面對持續出現的單台紅色敵艦。訓練你的瞄準與控制技能。
+            </p>
+            <div class="bg-black/40 p-3 rounded-lg text-xs text-left font-mono space-y-1 text-green-300 border border-green-500/20">
+                <div>• 按鍵控制: W(前進), S(後退), P/A(左轉), Q/D(右轉)</div>
+                <div>• 開火按鈕: 按 [T] 發射主砲, 按 [R] 或點擊 [次記] 開始高速連射</div>
+                <div>• 第一關時間: 60 秒 (敵坦克數量保持為 1)</div>
+            </div>
+            <button id="btn-start-game" class="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 font-black text-xl rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.5)] cursor-pointer">
+                開始戰鬥 (Level 1)
             </button>
         </div>
+
+        <!-- Tank Selection Box (Shown between Level 1 & Level 2) -->
+        <div id="modal-select" class="hidden hud-glass p-6 md:p-8 rounded-2xl max-w-2xl w-full text-center border-2 border-amber-500/50 space-y-6">
+            <h2 class="text-2xl md:text-3xl font-black text-amber-400">第一關完成！選擇第二關坦克</h2>
+            <p class="text-sm text-gray-300">
+                第二關即將爆發大規模裝甲會戰！你將與 <span class="text-green-400 font-bold">5 台綠色隊友坦克</span> 一起對抗 <span class="text-red-400 font-bold">100 台紅色敵方坦克</span>。請選擇你的座駕：
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Tank Option 1 -->
+                <div id="select-tank-1" class="hud-glass p-5 rounded-xl border-2 border-green-500/40 hover:border-green-400 cursor-pointer text-left transition-all hover:scale-105">
+                    <div class="text-xl font-bold text-green-400 mb-1">標準巡航坦克 (Tank 1)</div>
+                    <div class="text-xs text-gray-400 mb-3">高機動性 · 標準裝甲</div>
+                    <div class="text-2xl font-black font-mono text-white mb-2">血量: 150 HP</div>
+                    <ul class="text-xs text-gray-300 space-y-1">
+                        <li>✓ 機動轉向靈敏</li>
+                        <li>✓ 包含「次記」無限連射系統</li>
+                        <li>✓ 速度表現優異</li>
+                    </ul>
+                </div>
+
+                <!-- Tank Option 2 -->
+                <div id="select-tank-2" class="hud-glass p-5 rounded-xl border-2 border-amber-500/40 hover:border-amber-400 cursor-pointer text-left transition-all hover:scale-105">
+                    <div class="text-xl font-bold text-amber-400 mb-1">重型裝甲霸王 (Tank 2)</div>
+                    <div class="text-xs text-gray-400 mb-3">超高防禦 · 強化金屬身軀</div>
+                    <div class="text-2xl font-black font-mono text-amber-300 mb-2">血量: 500 HP</div>
+                    <ul class="text-xs text-gray-300 space-y-1">
+                        <li>★ 原始血量提升至 500</li>
+                        <li>✓ 適合百台敵艦百人斬大規模交戰</li>
+                        <li>✓ 包含「次記」無限連射系統</li>
+                    </ul>
+                </div>
+            </div>
+
+            <button id="btn-start-level2" class="w-full py-4 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 font-black text-xl rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.5)] cursor-pointer">
+                進入第二關 (開戰 100 敵艦)
+            </button>
+        </div>
+
+        <!-- Game Over / Victory Modal -->
+        <div id="modal-end" class="hidden hud-glass p-6 md:p-8 rounded-2xl max-w-md w-full text-center border-2 border-red-500/50 space-y-5">
+            <h2 id="end-title" class="text-3xl font-black text-red-500">坦克遭摧毀！</h2>
+            <p id="end-desc" class="text-sm text-gray-300">你的裝甲無法承受強大火力...</p>
+            <button id="btn-restart" class="w-full py-3 bg-red-600 hover:bg-red-500 font-bold text-lg rounded-xl cursor-pointer">
+                重新開始戰鬥
+            </button>
+        </div>
+
     </div>
 
-    <!-- Game Engine Scripts -->
+    <!-- GAME SCRIPT LOGIC -->
     <script>
-        // ==========================================
-        // Synthesized Audio Engine (Web Audio API)
-        // ==========================================
-        class SoundEngine {
-            constructor() {
-                this.ctx = null;
-            }
+        // --- GAME ENGINE & STATE CONFIG ---
+        const CONFIG = {
+            level1Time: 60,
+            tank1HP: 150,
+            tank2HP: 500,
+            clipSize: 20,
+            reloadTime: 0.5, // Seconds
+            rapidFireInterval: 0.1, // Seconds for "次記"
+            enemyReloadTime: 5.0, // AI firing delay
+            level2EnemyCount: 100,
+            level2AllyCount: 5,
+            worldSize: 600
+        };
 
-            init() {
-                if (!this.ctx) {
-                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const STATE = {
+            currentLevel: 1, // 1 or 2
+            gameActive: false,
+            timeRemaining: CONFIG.level1Time,
+            selectedTankHP: CONFIG.tank1HP,
+            playerHP: CONFIG.tank1HP,
+            playerMaxHP: CONFIG.tank1HP,
+            ammo: CONFIG.clipSize,
+            isReloading: false,
+            rapidFiring: false,
+            keys: {},
+            lastMainShootTime: 0,
+            lastRapidShootTime: 0,
+            enemiesKilled: 0
+        };
+
+        // THREE.JS Engine Variables
+        let scene, camera, renderer;
+        let playerGroup, turretMesh, barrelMesh;
+        let playerVelocity = new THREE.Vector3();
+        let playerRotation = 0;
+        let turretRotation = 0;
+
+        const enemies = [];
+        const allies = [];
+        const bullets = [];
+        const particleEffects = [];
+
+        // WEB AUDIO SYNTHESIZER
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            try {
+                const now = audioCtx.currentTime;
+                if (type === 'shoot') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                } else if (type === 'rapid') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(350, now);
+                    osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                } else if (type === 'hit') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(120, now);
+                    osc.frequency.exponentialRampToValueAtTime(30, now + 0.15);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } else if (type === 'reload') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.linearRampToValueAtTime(800, now + 0.15);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
                 }
-            }
-
-            playShoot() {
-                if (!this.ctx) return;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(320, this.ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.12);
-                gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
-                osc.connect(gain); gain.connect(this.ctx.destination);
-                osc.start(); osc.stop(this.ctx.currentTime + 0.12);
-            }
-
-            playExplosion() {
-                if (!this.ctx) return;
-                const dur = 0.4;
-                const bufferSize = this.ctx.sampleRate * dur;
-                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-                const noise = this.ctx.createBufferSource(); noise.buffer = buffer;
-                const filter = this.ctx.createBiquadFilter(); filter.type = 'lowpass';
-                filter.frequency.setValueAtTime(600, this.ctx.currentTime);
-                filter.frequency.linearRampToValueAtTime(40, this.ctx.currentTime + dur);
-                const gain = this.ctx.createGain();
-                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
-                noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
-                noise.start();
-            }
-
-            playZombieGroan() {
-                if (!this.ctx) return;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(100, this.ctx.currentTime);
-                osc.frequency.linearRampToValueAtTime(60, this.ctx.currentTime + 0.3);
-                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
-                osc.connect(gain); gain.connect(this.ctx.destination);
-                osc.start(); osc.stop(this.ctx.currentTime + 0.3);
-            }
-
-            playEventAlert() {
-                if (!this.ctx) return;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
-                osc.frequency.setValueAtTime(900, this.ctx.currentTime + 0.1);
-                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
-                osc.connect(gain); gain.connect(this.ctx.destination);
-                osc.start(); osc.stop(this.ctx.currentTime + 0.25);
-            }
-
-            playReload() {
-                if (!this.ctx) return;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
-                osc.frequency.linearRampToValueAtTime(750, this.ctx.currentTime + 0.15);
-                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
-                osc.connect(gain); gain.connect(this.ctx.destination);
-                osc.start(); osc.stop(this.ctx.currentTime + 0.15);
-            }
-
-            playHit() {
-                if (!this.ctx) return;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(160, this.ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.08);
-                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
-                osc.connect(gain); gain.connect(this.ctx.destination);
-                osc.start(); osc.stop(this.ctx.currentTime + 0.08);
+            } catch (e) {
+                // Audio safely fallback
             }
         }
 
-        const sound = new SoundEngine();
+        // --- SCENE INITIALIZATION ---
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050811);
+            scene.fog = new THREE.FogExp2(0x050811, 0.0035);
 
-        // ==========================================
-        // Canvas & World Setup
-        // ==========================================
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-        const keys = {};
-        const mouse = { x: 0, y: 0 };
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
 
-        // Requirements Config
-        const PLAYER_MAX_HP = 150;
-        const MAG_CAPACITY = 20;
-        const MAX_MAGS = 5;
-        const PLAYER_RELOAD_TIME = 0.5; // 0.5s reload
-        const AI_RELOAD_TIME = 5.0;      // 5s reload
-        const MATCH_DURATION = 120;     // 2 Minutes (120 seconds)
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xdcfce7, 0.4);
+            scene.add(ambientLight);
 
-        let gameState = 'START';
-        let matchTimerSeconds = MATCH_DURATION;
-        let matchInterval = null;
-        let lastTime = 0;
-        let score = 0;
-        let showShootBtn = true;
-        let screenShake = 0;
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(100, 200, 100);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
 
-        // Dynamic Random Event State
-        let eventTimer = 0;
-        let nextEventTime = 15; // Trigger every 15-20 seconds
-        let currentEvent = null; // 'ZOMBIES', 'METEOR', 'AIRDROP', 'SANDSTORM', 'EMP'
-        let eventDurationTimer = 0;
+            // Terrain Ground Grid & Obstacles
+            buildTerrain();
 
-        // Entity Collections
-        let particles = [];
-        let bullets = [];
-        let enemies = [];
-        let zombies = [];
-        let meteors = [];
-        let airDrops = [];
-        let treadMarks = [];
-        let floatingTexts = [];
+            // Player First-Person Rig Setup
+            createPlayerRig();
 
-        // UI DOM References
-        const ammoValEl = document.getElementById('ammoVal');
-        const magCountEl = document.getElementById('magCount');
-        const reloadBarEl = document.getElementById('reloadBar');
-        const reloadStatusEl = document.getElementById('reloadStatus');
-        const hpBarEl = document.getElementById('hpBar');
-        const hpValTextEl = document.getElementById('hpValText');
-        const scoreValEl = document.getElementById('scoreVal');
-        const enemyCountValEl = document.getElementById('enemyCountVal');
-        const fireBtn = document.getElementById('fireBtn');
-        const matchTimerEl = document.getElementById('matchTimer');
-        const eventBanner = document.getElementById('eventBanner');
-        const eventIcon = document.getElementById('eventIcon');
-        const eventText = document.getElementById('eventText');
-        const notifyBanner = document.getElementById('notifyBanner');
-        const modalOverlay = document.getElementById('modalOverlay');
-        const modalTitle = document.getElementById('modalTitle');
-        const modalDesc = document.getElementById('modalDesc');
-        const startBtn = document.getElementById('startBtn');
-
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        let alertTimeout = null;
-        function showAlert(msg) {
-            notifyBanner.innerText = msg;
-            notifyBanner.classList.remove('opacity-0', 'translate-y-[-10px]');
-            notifyBanner.classList.add('opacity-100', 'translate-y-0');
-            clearTimeout(alertTimeout);
-            alertTimeout = setTimeout(() => {
-                notifyBanner.classList.remove('opacity-100', 'translate-y-0');
-                notifyBanner.classList.add('opacity-0', 'translate-y-[-10px]');
-            }, 1800);
+            window.addEventListener('resize', onWindowResize);
         }
 
-        function addFloatingText(x, y, text, color = '#38bdf8') {
-            floatingTexts.push({ x, y, text, color, alpha: 1.0, life: 40 });
+        function buildTerrain() {
+            // Ground
+            const groundGeo = new THREE.PlaneGeometry(CONFIG.worldSize, CONFIG.worldSize, 32, 32);
+            const groundMat = new THREE.MeshStandardMaterial({ 
+                color: 0x111827, 
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Grid helper overlay
+            const grid = new THREE.GridHelper(CONFIG.worldSize, 60, 0x22c55e, 0x1f2937);
+            grid.position.y = 0.05;
+            scene.add(grid);
+
+            // Random Obstacles (Cubes / Pillars)
+            const boxGeo = new THREE.BoxGeometry(6, 12, 6);
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.5 });
+            for (let i = 0; i < 45; i++) {
+                const box = new THREE.Mesh(boxGeo, boxMat);
+                box.position.x = (Math.random() - 0.5) * (CONFIG.worldSize - 60);
+                box.position.z = (Math.random() - 0.5) * (CONFIG.worldSize - 60);
+                box.position.y = 6;
+                box.castShadow = true;
+                box.receiveShadow = true;
+                scene.add(box);
+            }
         }
 
-        // ==========================================
-        // Player Tank
-        // ==========================================
-        class PlayerTank {
-            constructor(x, y) {
-                this.x = x;
-                this.y = y;
-                this.radius = 22;
-                this.angle = 0;
-                this.turretAngle = 0;
-                this.speed = 0;
-                this.maxSpeed = 3.2;
-                this.turnSpeed = 0.055;
-                this.hp = PLAYER_MAX_HP;
+        function createPlayerRig() {
+            playerGroup = new THREE.Group();
+            scene.add(playerGroup);
 
-                this.ammoInMag = MAG_CAPACITY;
-                this.magsLeft = MAX_MAGS - 1;
-                this.isReloading = false;
-                this.reloadTimer = 0;
+            // Camera is placed in player cockpit
+            camera.position.set(0, 2.2, 0.2);
+            playerGroup.add(camera);
+
+            // Visual Inner Gun Barrel protruding in FPV
+            const barrelGeo = new THREE.CylinderGeometry(0.12, 0.15, 3.5, 12);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x15803d, metalness: 0.8, roughness: 0.2 });
+            barrelMesh = new THREE.Mesh(barrelGeo, barrelMat);
+            barrelMesh.rotation.x = Math.PI / 2;
+            barrelMesh.position.set(0.6, 1.6, -1.8);
+            playerGroup.add(barrelMesh);
+        }
+
+        // --- TANK FACTORY MESH GENERATOR ---
+        function createTankMesh(colorHex, isPlayer = false) {
+            const group = new THREE.Group();
+
+            // Body Chassis
+            const bodyGeo = new THREE.BoxGeometry(3.6, 1.4, 5);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.4, metalness: 0.5 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 1;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            group.add(body);
+
+            // Tracks
+            const trackGeo = new THREE.BoxGeometry(0.8, 1.2, 5.2);
+            const trackMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
+            const leftTrack = new THREE.Mesh(trackGeo, trackMat);
+            leftTrack.position.set(-2.1, 0.8, 0);
+            const rightTrack = leftTrack.clone();
+            rightTrack.position.x = 2.1;
+            group.add(leftTrack);
+            group.add(rightTrack);
+
+            // Turret Top
+            const turretGeo = new THREE.BoxGeometry(2.4, 1.0, 2.6);
+            const turret = new THREE.Mesh(turretGeo, bodyMat);
+            turret.position.set(0, 2.0, -0.2);
+            group.add(turret);
+
+            // Cannon Barrel
+            const bGeo = new THREE.CylinderGeometry(0.18, 0.2, 3.2, 12);
+            const bMat = new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.8 });
+            const barrel = new THREE.Mesh(bGeo, bMat);
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.set(0, 2.0, -2.0);
+            group.add(barrel);
+
+            return group;
+        }
+
+        // --- SPAWN UNITS ---
+        function spawnEnemy() {
+            const mesh = createTankMesh(0xef4444); // Red
+            let x, z;
+            do {
+                x = (Math.random() - 0.5) * (CONFIG.worldSize - 80);
+                z = (Math.random() - 0.5) * (CONFIG.worldSize - 80);
+            } while (Math.hypot(x - playerGroup.position.x, z - playerGroup.position.z) < 30);
+
+            mesh.position.set(x, 0, z);
+            scene.add(mesh);
+
+            enemies.push({
+                mesh: mesh,
+                hp: 50,
+                lastShot: Math.random() * CONFIG.enemyReloadTime,
+                moveTimer: 0,
+                targetDir: new THREE.Vector3()
+            });
+            updateHUDCounters();
+        }
+
+        function spawnAlly() {
+            const mesh = createTankMesh(0x22c55e); // Green
+            const x = playerGroup.position.x + (Math.random() - 0.5) * 40;
+            const z = playerGroup.position.z + (Math.random() - 0.5) * 40;
+
+            mesh.position.set(x, 0, z);
+            scene.add(mesh);
+
+            allies.push({
+                mesh: mesh,
+                hp: 120,
+                lastShot: Math.random() * 3,
+                targetDir: new THREE.Vector3()
+            });
+            updateHUDCounters();
+        }
+
+        function clearAllEntities() {
+            enemies.forEach(e => scene.remove(e.mesh));
+            allies.forEach(a => scene.remove(a.mesh));
+            bullets.forEach(b => scene.remove(b.mesh));
+            enemies.length = 0;
+            allies.length = 0;
+            bullets.length = 0;
+            updateHUDCounters();
+        }
+
+        // --- SHOOTING MECHANICS ---
+        function shootPlayerBullet(isRapid = false) {
+            if (!STATE.gameActive) return;
+
+            if (STATE.isReloading) return;
+
+            if (STATE.ammo <= 0) {
+                triggerReload();
+                return;
             }
 
-            update(dt) {
-                // Apply sandstorm speed penalty if active
-                const speedMult = (currentEvent === 'SANDSTORM') ? 0.6 : 1.0;
+            STATE.ammo--;
+            updateHUDAmmo();
 
-                if (keys['w'] || keys['W']) {
-                    this.speed = Math.min(this.speed + 0.2, this.maxSpeed * speedMult);
-                } else if (keys['s'] || keys['S']) {
-                    this.speed = Math.max(this.speed - 0.2, -this.maxSpeed * 0.6 * speedMult);
-                } else {
-                    this.speed *= 0.88;
+            playSound(isRapid ? 'rapid' : 'shoot');
+
+            // Recoil Animation
+            barrelMesh.position.z = -1.5;
+            setTimeout(() => { barrelMesh.position.z = -1.8; }, 80);
+
+            // Bullet Mesh
+            const bGeo = new THREE.SphereGeometry(isRapid ? 0.25 : 0.4, 8, 8);
+            const bMat = new THREE.MeshBasicMaterial({ color: isRapid ? 0xf59e0b : 0x4ade80 });
+            const bMesh = new THREE.Mesh(bGeo, bMat);
+
+            // Position bullet in front of camera
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+
+            bMesh.position.copy(playerGroup.position).add(new THREE.Vector3(0, 1.8, 0)).addScaledVector(dir, 2.5);
+            scene.add(bMesh);
+
+            bullets.push({
+                mesh: bMesh,
+                dir: dir,
+                speed: isRapid ? 2.2 : 2.8,
+                isPlayer: true,
+                damage: isRapid ? 18 : 35,
+                life: 120
+            });
+
+            if (STATE.ammo <= 0) {
+                triggerReload();
+            }
+        }
+
+        function triggerReload() {
+            if (STATE.isReloading) return;
+            STATE.isReloading = true;
+            document.getElementById('reload-indicator').classList.remove('hidden');
+            playSound('reload');
+
+            setTimeout(() => {
+                STATE.ammo = CONFIG.clipSize;
+                STATE.isReloading = false;
+                document.getElementById('reload-indicator').classList.add('hidden');
+                updateHUDAmmo();
+            }, CONFIG.reloadTime * 1000);
+        }
+
+        function spawnEnemyBullet(fromPos, targetPos) {
+            const bGeo = new THREE.SphereGeometry(0.35, 8, 8);
+            const bMat = new THREE.MeshBasicMaterial({ color: 0xf87171 });
+            const bMesh = new THREE.Mesh(bGeo, bMat);
+
+            bMesh.position.copy(fromPos).add(new THREE.Vector3(0, 2, 0));
+            scene.add(bMesh);
+
+            const dir = new THREE.Vector3().subVectors(targetPos, fromPos).normalize();
+
+            bullets.push({
+                mesh: bMesh,
+                dir: dir,
+                speed: 1.6,
+                isPlayer: false,
+                damage: 15,
+                life: 120
+            });
+        }
+
+        // --- LEVEL FLOW & STAGE MANAGERS ---
+        function startLevel1() {
+            STATE.currentLevel = 1;
+            STATE.timeRemaining = CONFIG.level1Time;
+            STATE.playerHP = CONFIG.tank1HP;
+            STATE.playerMaxHP = CONFIG.tank1HP;
+            STATE.ammo = CONFIG.clipSize;
+            STATE.gameActive = true;
+
+            document.getElementById('stage-text').innerText = "第一關：單機試煉";
+            document.getElementById('modal-screen').classList.add('hidden');
+            document.getElementById('modal-start').classList.add('hidden');
+            document.getElementById('modal-select').classList.add('hidden');
+            document.getElementById('modal-end').classList.add('hidden');
+
+            clearAllEntities();
+            playerGroup.position.set(0, 0, 0);
+            playerRotation = 0;
+
+            // Maintain EXACTLY 1 Enemy for Level 1
+            spawnEnemy();
+            updateHUDHP();
+            updateHUDAmmo();
+        }
+
+        function showTankSelection() {
+            STATE.gameActive = false;
+            document.getElementById('modal-screen').classList.remove('hidden');
+            document.getElementById('modal-select').classList.remove('hidden');
+        }
+
+        function startLevel2(tankHpChoice) {
+            STATE.currentLevel = 2;
+            STATE.timeRemaining = 999; // Infinite time for level 2 massive battle
+            STATE.playerHP = tankHpChoice;
+            STATE.playerMaxHP = tankHpChoice;
+            STATE.ammo = CONFIG.clipSize;
+            STATE.gameActive = true;
+
+            document.getElementById('stage-text').innerText = "第二關：百艦大對決";
+            document.getElementById('modal-screen').classList.add('hidden');
+            document.getElementById('modal-select').classList.add('hidden');
+
+            clearAllEntities();
+            playerGroup.position.set(0, 0, 0);
+
+            // Spawn 100 Red Enemies
+            for (let i = 0; i < CONFIG.level2EnemyCount; i++) {
+                spawnEnemy();
+            }
+
+            // Spawn 5 Green Allies
+            for (let i = 0; i < CONFIG.level2AllyCount; i++) {
+                spawnAlly();
+            }
+
+            updateHUDHP();
+            updateHUDAmmo();
+            showAlertBanner("大規模戰場！消滅 100 台紅色敵艦！");
+        }
+
+        function gameOver(isWin = false) {
+            STATE.gameActive = false;
+            document.getElementById('modal-screen').classList.remove('hidden');
+            document.getElementById('modal-end').classList.remove('hidden');
+
+            const title = document.getElementById('end-title');
+            const desc = document.getElementById('end-desc');
+
+            if (isWin) {
+                title.innerText = "勝 利 ！所有敵艦清空！";
+                title.className = "text-3xl font-black text-green-400";
+                desc.innerText = "你成功引導盟軍取得了最終的裝甲勝利！";
+            } else {
+                title.innerText = "裝甲摧毀！戰敗！";
+                title.className = "text-3xl font-black text-red-500";
+                desc.innerText = "你的坦克承受過量傷害爆裂...";
+            }
+        }
+
+        // --- HUD UPDATERS ---
+        function updateHUDHP() {
+            document.getElementById('hp-value').innerText = `${Math.max(0, Math.ceil(STATE.playerHP))} / ${STATE.playerMaxHP}`;
+            const pct = Math.max(0, (STATE.playerHP / STATE.playerMaxHP) * 100);
+            document.getElementById('hp-bar').style.width = `${pct}%`;
+        }
+
+        function updateHUDAmmo() {
+            document.getElementById('ammo-count').innerText = STATE.ammo;
+        }
+
+        function updateHUDCounters() {
+            document.getElementById('enemy-count').innerText = enemies.length;
+            document.getElementById('ally-count').innerText = allies.length;
+        }
+
+        function showAlertBanner(msg) {
+            const banner = document.getElementById('alert-banner');
+            banner.innerText = msg;
+            banner.classList.remove('hidden');
+            setTimeout(() => banner.classList.add('hidden'), 3500);
+        }
+
+        // --- TIMER TICK ---
+        setInterval(() => {
+            if (!STATE.gameActive) return;
+
+            if (STATE.currentLevel === 1) {
+                STATE.timeRemaining--;
+                document.getElementById('timer-display').innerText = STATE.timeRemaining;
+
+                if (STATE.timeRemaining <= 0) {
+                    showTankSelection();
                 }
-
-                // Turning controls (P: Left, Q: Right)
-                if (keys['p'] || keys['P']) this.angle -= this.turnSpeed;
-                if (keys['q'] || keys['Q']) this.angle += this.turnSpeed;
-
-                this.x += Math.cos(this.angle) * this.speed;
-                this.y += Math.sin(this.angle) * this.speed;
-
-                this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
-                this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
-
-                if (Math.abs(this.speed) > 0.5 && Math.random() < 0.3) {
-                    treadMarks.push({ x: this.x, y: this.y, angle: this.angle, life: 180 });
-                }
-
-                this.turretAngle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
-
-                if (this.isReloading) {
-                    this.reloadTimer += dt;
-                    const progress = Math.min(this.reloadTimer / PLAYER_RELOAD_TIME, 1.0);
-                    reloadBarEl.style.width = `${progress * 100}%`;
-                    reloadStatusEl.innerText = `裝彈中... (${(PLAYER_RELOAD_TIME - this.reloadTimer).toFixed(1)}s)`;
-
-                    if (this.reloadTimer >= PLAYER_RELOAD_TIME) {
-                        this.isReloading = false;
-                        this.ammoInMag = MAG_CAPACITY;
-                        reloadStatusEl.innerText = "READY";
-                        reloadBarEl.style.width = "100%";
-                        showAlert("彈夾裝填完成！ READY!");
-                    }
-                }
+            } else {
+                document.getElementById('timer-display').innerText = "∞";
             }
+        }, 1000);
 
-            reload() {
-                if (this.isReloading) return;
-                if (this.ammoInMag === MAG_CAPACITY) {
-                    showAlert("彈夾已滿！ Magazine Full!");
-                    return;
-                }
-                if (this.magsLeft <= 0) {
-                    showAlert("已無備用彈夾！ Out of Mags!");
-                    return;
-                }
-
-                this.magsLeft--;
-                this.isReloading = true;
-                this.reloadTimer = 0;
-                sound.playReload();
-                showAlert("開始裝彈... Reloading...");
-            }
-
-            shoot() {
-                if (currentEvent === 'EMP') {
-                    showAlert("⚡ EMP 電磁脈衝干擾中，無法射擊！");
-                    return;
-                }
-                if (this.isReloading) return;
-
-                if (this.ammoInMag <= 0) {
-                    if (this.magsLeft > 0) this.reload();
-                    else showAlert("彈藥耗盡！ NO AMMO!");
-                    return;
-                }
-
-                this.ammoInMag--;
-                sound.playShoot();
-
-                const muzzleDist = 32;
-                const bx = this.x + Math.cos(this.turretAngle) * muzzleDist;
-                const by = this.y + Math.sin(this.turretAngle) * muzzleDist;
-
-                bullets.push(new Bullet(bx, by, this.turretAngle, true));
-                createMuzzleFlash(bx, by, this.turretAngle);
-
-                if (this.ammoInMag === 0 && this.magsLeft > 0) {
-                    this.reload();
-                }
-            }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-
-                ctx.rotate(this.angle);
-                ctx.fillStyle = '#1e293b';
-                ctx.fillRect(-22, -18, 44, 8);
-                ctx.fillRect(-22, 10, 44, 8);
-
-                ctx.fillStyle = '#0284c7';
-                ctx.beginPath();
-                ctx.roundRect(-20, -13, 40, 26, 6);
-                ctx.fill();
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-
-                ctx.restore();
-
-                // Turret
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.turretAngle);
-
-                ctx.fillStyle = '#0f172a';
-                ctx.fillRect(0, -4, 28, 8);
-                ctx.strokeStyle = '#38bdf8';
-                ctx.strokeRect(0, -4, 28, 8);
-
-                ctx.fillStyle = '#0369a1';
-                ctx.beginPath();
-                ctx.arc(0, 0, 12, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#7dd3fc';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-
-                if (currentEvent === 'EMP') {
-                    ctx.strokeStyle = '#f59e0b';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 18, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
-
-                ctx.restore();
-            }
-        }
-
-        // ==========================================
-        // AI Tank Class (5s Reload & Wild Shooting)
-        // ==========================================
-        class AITank {
-            constructor(x, y) {
-                this.x = x;
-                this.y = y;
-                this.radius = 20;
-                this.angle = Math.random() * Math.PI * 2;
-                this.turretAngle = this.angle;
-                this.speed = 1.8;
-                this.hp = 60;
-                this.moveTimer = 0;
-                this.targetAngle = this.angle;
-                this.shootCooldown = Math.random() * AI_RELOAD_TIME; 
-            }
-
-            update(dt, player) {
-                this.moveTimer += dt;
-                if (this.moveTimer > 2.0) {
-                    this.moveTimer = 0;
-                    this.targetAngle = this.angle + (Math.random() - 0.5) * 2.5;
-                }
-
-                const speedMult = (currentEvent === 'SANDSTORM') ? 0.5 : 1.0;
-                this.angle += (this.targetAngle - this.angle) * 0.05;
-                this.x += Math.cos(this.angle) * this.speed * speedMult;
-                this.y += Math.sin(this.angle) * this.speed * speedMult;
-
-                if (this.x < 40 || this.x > canvas.width - 40) this.angle = Math.PI - this.angle;
-                if (this.y < 40 || this.y > canvas.height - 40) this.angle = -this.angle;
-
-                // Wild AI Shooting (5s cooldown)
-                this.shootCooldown += dt;
-                this.turretAngle += 0.03;
-
-                if (this.shootCooldown >= AI_RELOAD_TIME && currentEvent !== 'EMP') {
-                    this.shootCooldown = 0;
-
-                    let wildAngle = (Math.random() < 0.5) 
-                        ? Math.random() * Math.PI * 2
-                        : Math.atan2(player.y - this.y, player.x - this.x) + (Math.random() - 0.5) * 1.8;
-
-                    this.turretAngle = wildAngle;
-                    const bx = this.x + Math.cos(wildAngle) * 25;
-                    const by = this.y + Math.sin(wildAngle) * 25;
-                    bullets.push(new Bullet(bx, by, wildAngle, false));
-                    sound.playShoot();
-                    createMuzzleFlash(bx, by, wildAngle);
-                }
-            }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-
-                ctx.rotate(this.angle);
-                ctx.fillStyle = '#450a0a';
-                ctx.fillRect(-18, -14, 36, 6);
-                ctx.fillRect(-18, 8, 36, 6);
-
-                ctx.fillStyle = '#dc2626';
-                ctx.beginPath();
-                ctx.roundRect(-16, -10, 32, 20, 4);
-                ctx.fill();
-                ctx.strokeStyle = '#fca5a5';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-
-                ctx.restore();
-
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.turretAngle);
-
-                ctx.fillStyle = '#18181b';
-                ctx.fillRect(0, -3, 22, 6);
-
-                ctx.fillStyle = '#991b1b';
-                ctx.beginPath();
-                ctx.arc(0, 0, 9, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.restore();
-
-                // HP Bar
-                ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                ctx.fillRect(this.x - 18, this.y - 25, 36, 5);
-                ctx.fillStyle = '#ef4444';
-                ctx.fillRect(this.x - 18, this.y - 25, (this.hp / 60) * 36, 5);
-            }
-        }
-
-        // ==========================================
-        // Zombie Class (Event: Zombie Outbreak)
-        // ==========================================
-        class Zombie {
-            constructor(x, y) {
-                this.x = x;
-                this.y = y;
-                this.radius = 12;
-                this.hp = 25;
-                this.speed = 2.4;
-            }
-
-            update(player, enemies) {
-                // Target nearest living entity (player or AI tank)
-                let target = player;
-                let minDist = Math.hypot(player.x - this.x, player.y - this.y);
-
-                for (let e of enemies) {
-                    let d = Math.hypot(e.x - this.x, e.y - this.y);
-                    if (d < minDist) {
-                        minDist = d;
-                        target = e;
-                    }
-                }
-
-                const angle = Math.atan2(target.y - this.y, target.x - this.x);
-                this.x += Math.cos(angle) * this.speed;
-                this.y += Math.sin(angle) * this.speed;
-
-                // Melee bite attack
-                if (minDist < this.radius + target.radius) {
-                    target.hp -= 0.4;
-                    if (Math.random() < 0.1) sound.playZombieGroan();
-                }
-            }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-
-                ctx.fillStyle = '#22c55e'; // Zombie Green
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#15803d';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-
-                // Eyes
-                ctx.fillStyle = '#ef4444';
-                ctx.beginPath();
-                ctx.arc(-3, -3, 2, 0, Math.PI * 2);
-                ctx.arc(3, -3, 2, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.restore();
-            }
-        }
-
-        // ==========================================
-        // Meteor Class (Event: Meteor Shower)
-        // ==========================================
-        class Meteor {
-            constructor(targetX, targetY) {
-                this.targetX = targetX;
-                this.targetY = targetY;
-                this.radius = 45;
-                this.timer = 1.5; // 1.5 sec warning circle
-                this.crashed = false;
-            }
-
-            update(dt) {
-                if (this.crashed) return;
-                this.timer -= dt;
-
-                if (this.timer <= 0) {
-                    this.crashed = true;
-                    screenShake = 15;
-                    sound.playExplosion();
-
-                    // Explosive damage splash
-                    createExplosion(this.targetX, this.targetY);
-
-                    // Damage Player
-                    if (Math.hypot(player.x - this.targetX, player.y - this.targetY) < this.radius + player.radius) {
-                        player.hp -= 45;
-                        addFloatingText(player.x, player.y, "-45 HP", "#ef4444");
-                    }
-
-                    // Damage AI Enemies
-                    for (let e of enemies) {
-                        if (Math.hypot(e.x - this.targetX, e.y - this.targetY) < this.radius + e.radius) {
-                            e.hp -= 60;
-                            addFloatingText(e.x, e.y, "-60 HP", "#f97316");
-                        }
-                    }
-
-                    // Damage Zombies
-                    for (let z of zombies) {
-                        if (Math.hypot(z.x - this.targetX, z.y - this.targetY) < this.radius + z.radius) {
-                            z.hp = 0;
-                        }
-                    }
-                }
-            }
-
-            draw() {
-                if (this.crashed) return;
-
-                ctx.save();
-                ctx.translate(this.targetX, this.targetY);
-
-                // Warning target indicator
-                ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + Math.sin(Date.now() * 0.01) * 0.3})`;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-                ctx.stroke();
-
-                ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
-                ctx.fill();
-
-                ctx.restore();
-            }
-        }
-
-        // ==========================================
-        // Air Drop Supply Class (Event: Air Drop)
-        // ==========================================
-        class AirDrop {
-            constructor(x, y, type) {
-                this.x = x;
-                this.y = y;
-                this.type = type; // 'HEALTH' or 'AMMO'
-                this.radius = 16;
-                this.collected = false;
-            }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-
-                ctx.fillStyle = this.type === 'HEALTH' ? '#10b981' : '#f59e0b';
-                ctx.beginPath();
-                ctx.roundRect(-14, -14, 28, 28, 6);
-                ctx.fill();
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(this.type === 'HEALTH' ? 'HP+' : 'MAG+', 0, 0);
-
-                ctx.restore();
-            }
-        }
-
-        // ==========================================
-        // Bullet & Particle Classes
-        // ==========================================
-        class Bullet {
-            constructor(x, y, angle, isPlayer) {
-                this.x = x; this.y = y; this.angle = angle;
-                this.speed = isPlayer ? 10 : 7;
-                this.isPlayer = isPlayer;
-                this.radius = 4;
-                this.markedForDeletion = false;
-                this.life = 120;
-            }
-
-            update() {
-                this.x += Math.cos(this.angle) * this.speed;
-                this.y += Math.sin(this.angle) * this.speed;
-                this.life--;
-                if (this.life <= 0 || this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
-                    this.markedForDeletion = true;
-                }
-            }
-
-            draw() {
-                ctx.save();
-                ctx.fillStyle = this.isPlayer ? '#38bdf8' : '#f87171';
-                ctx.shadowColor = this.isPlayer ? '#0284c7' : '#dc2626';
-                ctx.shadowBlur = 8;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-
-        class Particle {
-            constructor(x, y, vx, vy, color, size, maxLife) {
-                this.x = x; this.y = y; this.vx = vx; this.vy = vy;
-                this.color = color; this.size = size;
-                this.life = maxLife; this.maxLife = maxLife;
-            }
-
-            update() {
-                this.x += this.vx; this.y += this.vy; this.life--;
-            }
-
-            draw() {
-                ctx.save();
-                ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-
-        function createMuzzleFlash(x, y, angle) {
-            for (let i = 0; i < 8; i++) {
-                const spread = angle + (Math.random() - 0.5) * 0.8;
-                const speed = Math.random() * 4 + 2;
-                particles.push(new Particle(x, y, Math.cos(spread) * speed, Math.sin(spread) * speed, '#fbbf24', Math.random() * 3 + 2, 12));
-            }
-        }
-
-        function createExplosion(x, y) {
-            sound.playExplosion();
-            for (let i = 0; i < 35; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 6 + 1;
-                const color = ['#ef4444', '#f97316', '#fbbf24', '#475569'][Math.floor(Math.random() * 4)];
-                particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, color, Math.random() * 5 + 3, 30 + Math.random() * 20));
-            }
-        }
-
-        function drawCrosshair() {
-            ctx.save();
-            ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 1.5;
-
-            ctx.beginPath();
-            ctx.arc(mouse.x, mouse.y, 16, 0, Math.PI * 2);
-            ctx.stroke();
-
-            ctx.fillStyle = '#06b6d4';
-            ctx.beginPath();
-            ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.moveTo(mouse.x - 24, mouse.y); ctx.lineTo(mouse.x - 8, mouse.y);
-            ctx.moveTo(mouse.x + 8, mouse.y);  ctx.lineTo(mouse.x + 24, mouse.y);
-            ctx.moveTo(mouse.x, mouse.y - 24); ctx.lineTo(mouse.x, mouse.y - 8);
-            ctx.moveTo(mouse.x, mouse.y + 8);  ctx.lineTo(mouse.x, mouse.y + 24);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-
-        // ==========================================
-        // Random Events Generator
-        // ==========================================
-        function triggerRandomEvent() {
-            const eventTypes = ['ZOMBIES', 'METEOR', 'AIRDROP', 'SANDSTORM', 'EMP'];
-            currentEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-            eventDurationTimer = 10.0; // Event lasts 10s
-            sound.playEventAlert();
-
-            eventBanner.classList.remove('opacity-0', 'translate-y-[-10px]');
-            eventBanner.classList.add('opacity-100', 'translate-y-0');
-
-            if (currentEvent === 'ZOMBIES') {
-                eventIcon.innerText = '🧟';
-                eventText.innerText = '隨機事件：殭屍爆發 ZOMBIE OUTBREAK!';
-                showAlert("🧟 警告：大量殭屍湧入戰場！");
-                for (let i = 0; i < 12; i++) {
-                    const zx = Math.random() < 0.5 ? 20 : canvas.width - 20;
-                    const zy = Math.random() * canvas.height;
-                    zombies.push(new Zombie(zx, zy));
-                }
-            } else if (currentEvent === 'METEOR') {
-                eventIcon.innerText = '☄️';
-                eventText.innerText = '隨機事件：隕石雨來襲 METEOR SHOWER!';
-                showAlert("☄️ 警告：區域降下隕石雨！避開紅圈！");
-                for (let i = 0; i < 6; i++) {
-                    const mx = Math.random() * (canvas.width - 100) + 50;
-                    const my = Math.random() * (canvas.height - 100) + 50;
-                    meteors.push(new Meteor(mx, my));
-                }
-            } else if (currentEvent === 'AIRDROP') {
-                eventIcon.innerText = '📦';
-                eventText.innerText = '隨機事件：空投補給 AIR DROP!';
-                showAlert("📦 補給箱已空投至戰場！");
-                airDrops.push(new AirDrop(canvas.width * 0.3, canvas.height * 0.4, 'HEALTH'));
-                airDrops.push(new AirDrop(canvas.width * 0.7, canvas.height * 0.6, 'AMMO'));
-            } else if (currentEvent === 'SANDSTORM') {
-                eventIcon.innerText = '🌪️';
-                eventText.innerText = '隨機事件：特大沙塵暴 SANDSTORM!';
-                showAlert("🌪️ 沙塵暴侵襲！視野與車速降低！");
-            } else if (currentEvent === 'EMP') {
-                eventIcon.innerText = '⚡';
-                eventText.innerText = '隨機事件：EMP 電磁脈衝 EMP BLAST!';
-                showAlert("⚡ 警告：EMP 癱瘓所有坦克砲塔5秒！");
-            }
-        }
-
-        function clearCurrentEvent() {
-            currentEvent = null;
-            eventBanner.classList.remove('opacity-100', 'translate-y-0');
-            eventBanner.classList.add('opacity-0', 'translate-y-[-10px]');
-        }
-
-        // ==========================================
-        // Game State & Timer Engine
-        // ==========================================
-        let player = new PlayerTank(canvas.width / 2, canvas.height / 2);
-
-        function spawnEnemies() {
-            enemies = [];
-            for (let i = 0; i < 6; i++) {
-                let ex, ey;
-                do {
-                    ex = Math.random() * (canvas.width - 100) + 50;
-                    ey = Math.random() * (canvas.height - 100) + 50;
-                } while (Math.hypot(ex - player.x, ey - player.y) < 250);
-                enemies.push(new AITank(ex, ey));
-            }
-        }
-
-        function startMatchTimer() {
-            clearInterval(matchInterval);
-            matchTimerSeconds = MATCH_DURATION;
-
-            matchInterval = setInterval(() => {
-                if (gameState !== 'PLAYING') return;
-
-                matchTimerSeconds--;
-                const mins = Math.floor(matchTimerSeconds / 60).toString().padStart(2, '0');
-                const secs = (matchTimerSeconds % 60).toString().padStart(2, '0');
-                matchTimerEl.innerText = `${mins}:${secs}`;
-
-                if (matchTimerSeconds <= 0) {
-                    clearInterval(matchInterval);
-                    gameState = 'VICTORY';
-                    showEndScreen(true, "時間到！戰術生存成功！ TIME'S UP!");
-                }
-            }, 1000);
-        }
-
-        function initGame() {
-            sound.init();
-            player = new PlayerTank(canvas.width / 2, canvas.height / 2);
-            bullets = []; particles = []; zombies = []; meteors = []; airDrops = []; treadMarks = []; floatingTexts = [];
-            score = 0; eventTimer = 0; clearCurrentEvent();
-            spawnEnemies();
-            startMatchTimer();
-            gameState = 'PLAYING';
-            modalOverlay.classList.add('hidden');
-            showAlert("2分鐘極限戰鬥開始！");
-        }
-
-        function updateHUD() {
-            ammoValEl.innerText = player.ammoInMag;
-            magCountEl.innerText = `${player.magsLeft + (player.ammoInMag > 0 ? 1 : 0)} / ${MAX_MAGS}`;
-            
-            const hpPct = Math.max(0, (player.hp / PLAYER_MAX_HP) * 100);
-            hpBarEl.style.width = `${hpPct}%`;
-            hpValTextEl.innerText = `${Math.max(0, Math.ceil(player.hp))} / ${PLAYER_MAX_HP}`;
-
-            scoreValEl.innerText = score;
-            enemyCountValEl.innerText = enemies.length;
-        }
-
-        // ==========================================
-        // Event Listeners
-        // ==========================================
+        // --- INPUT EVENT LISTENERS ---
         window.addEventListener('keydown', (e) => {
-            keys[e.key] = true;
-            if (e.key === 't' || e.key === 'T') {
-                showShootBtn = !showShootBtn;
-                fireBtn.classList.toggle('hidden', !showShootBtn);
+            initAudio();
+            const k = e.key.toLowerCase();
+            STATE.keys[k] = true;
+
+            if (k === 't') {
+                shootPlayerBullet(false);
             }
-            if ((e.key === 'r' || e.key === 'R') && gameState === 'PLAYING') {
-                player.reload();
+            if (k === 'r') {
+                STATE.rapidFiring = true;
+                document.getElementById('btn-rapid').classList.add('active');
             }
         });
 
-        window.addEventListener('keyup', (e) => keys[e.key] = false);
-        window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            STATE.keys[k] = false;
+
+            if (k === 'r') {
+                STATE.rapidFiring = false;
+                document.getElementById('btn-rapid').classList.remove('active');
+            }
+        });
+
+        // Mouse Drag to Aim Camera
+        let isMouseDown = false;
+        let lastMouseX = 0;
         window.addEventListener('mousedown', (e) => {
-            if (e.target.closest('#uiOverlay') && !e.target.closest('#gameCanvas')) return;
-            if (gameState === 'PLAYING') player.shoot();
+            if (e.target.tagName === 'BUTTON') return;
+            initAudio();
+            isMouseDown = true;
+            lastMouseX = e.clientX;
         });
 
-        fireBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (gameState === 'PLAYING') player.shoot();
+        window.addEventListener('mouseup', () => isMouseDown = false);
+        window.addEventListener('mousemove', (e) => {
+            if (!isMouseDown || !STATE.gameActive) return;
+            const deltaX = e.clientX - lastMouseX;
+            lastMouseX = e.clientX;
+            turretRotation -= deltaX * 0.005;
+            camera.rotation.y = turretRotation;
+            barrelMesh.rotation.z = -turretRotation;
         });
 
-        startBtn.addEventListener('click', initGame);
-
-        // ==========================================
-        // Main Loop
-        // ==========================================
-        function gameLoop(timestamp) {
-            if (!lastTime) lastTime = timestamp;
-            const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
-            lastTime = timestamp;
-
-            ctx.save();
-            if (screenShake > 0) {
-                const rx = (Math.random() - 0.5) * screenShake;
-                const ry = (Math.random() - 0.5) * screenShake;
-                ctx.translate(rx, ry);
-                screenShake *= 0.9;
-                if (screenShake < 0.5) screenShake = 0;
+        // Touch aiming for mobile
+        window.addEventListener('touchmove', (e) => {
+            if (!STATE.gameActive || e.touches.length === 0) return;
+            const touch = e.touches[0];
+            if (lastMouseX !== 0) {
+                const deltaX = touch.clientX - lastMouseX;
+                turretRotation -= deltaX * 0.007;
+                camera.rotation.y = turretRotation;
             }
+            lastMouseX = touch.clientX;
+        });
+        window.addEventListener('touchend', () => lastMouseX = 0);
 
-            // Draw Terrain Ground
-            ctx.fillStyle = (currentEvent === 'SANDSTORM') ? '#78350f' : '#0f172a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // UI Buttons Wire-up
+        document.getElementById('btn-fire').addEventListener('click', () => {
+            initAudio();
+            shootPlayerBullet(false);
+        });
 
-            // Grid lines
-            ctx.strokeStyle = 'rgba(51, 65, 85, 0.2)';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 60) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            }
-            for (let y = 0; y < canvas.height; y += 60) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-            }
+        const btnRapid = document.getElementById('btn-rapid');
+        btnRapid.addEventListener('mousedown', () => { initAudio(); STATE.rapidFiring = true; });
+        btnRapid.addEventListener('mouseup', () => STATE.rapidFiring = false);
+        btnRapid.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); STATE.rapidFiring = true; });
+        btnRapid.addEventListener('touchend', () => STATE.rapidFiring = false);
 
-            if (gameState === 'PLAYING') {
-                // Event Timers
-                eventTimer += dt;
-                if (eventTimer >= nextEventTime) {
-                    eventTimer = 0;
-                    nextEventTime = 15 + Math.random() * 5; // 15-20 sec interval
-                    triggerRandomEvent();
+        document.getElementById('btn-start-game').addEventListener('click', () => {
+            initAudio();
+            startLevel1();
+        });
+
+        document.getElementById('select-tank-1').addEventListener('click', () => {
+            STATE.selectedTankHP = CONFIG.tank1HP;
+            document.getElementById('select-tank-1').classList.add('border-green-400', 'bg-green-500/20');
+            document.getElementById('select-tank-2').classList.remove('border-amber-400', 'bg-amber-500/20');
+        });
+
+        document.getElementById('select-tank-2').addEventListener('click', () => {
+            STATE.selectedTankHP = CONFIG.tank2HP;
+            document.getElementById('select-tank-2').classList.add('border-amber-400', 'bg-amber-500/20');
+            document.getElementById('select-tank-1').classList.remove('border-green-400', 'bg-green-500/20');
+        });
+
+        document.getElementById('btn-start-level2').addEventListener('click', () => {
+            initAudio();
+            startLevel2(STATE.selectedTankHP);
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            initAudio();
+            startLevel1();
+        });
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- MAIN GAME LOOP ---
+        let clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            if (STATE.gameActive) {
+                // 1. Rapid Fire ("次記") Execution
+                if (STATE.rapidFiring && (time - STATE.lastRapidShootTime) > CONFIG.rapidFireInterval) {
+                    STATE.lastRapidShootTime = time;
+                    shootPlayerBullet(true);
                 }
 
-                if (currentEvent) {
-                    eventDurationTimer -= dt;
-                    if (eventDurationTimer <= 0) clearCurrentEvent();
+                // 2. Player Movement Rules:
+                // W = Forward, S = Backward
+                // P or A = Turn Left, Q or D = Turn Right
+                const moveSpeed = 16 * delta;
+                const turnSpeed = 1.8 * delta;
+
+                if (STATE.keys['w']) {
+                    playerGroup.translateZ(-moveSpeed);
+                }
+                if (STATE.keys['s']) {
+                    playerGroup.translateZ(moveSpeed);
+                }
+                if (STATE.keys['p'] || STATE.keys['a']) {
+                    playerGroup.rotation.y += turnSpeed;
+                }
+                if (STATE.keys['q'] || STATE.keys['d']) {
+                    playerGroup.rotation.y -= turnSpeed;
                 }
 
-                // Update Player
-                player.update(dt);
+                // Clamp Player in Boundaries
+                const bound = CONFIG.worldSize / 2 - 10;
+                playerGroup.position.x = THREE.MathUtils.clamp(playerGroup.position.x, -bound, bound);
+                playerGroup.position.z = THREE.MathUtils.clamp(playerGroup.position.z, -bound, bound);
 
-                // Update AI Enemies
-                for (let i = enemies.length - 1; i >= 0; i--) {
-                    const enemy = enemies[i];
-                    enemy.update(dt, player);
-                    enemy.draw();
+                // 3. Level 1 Rule Enforcement: Enemies Count MUST remain EXACTLY 1
+                if (STATE.currentLevel === 1 && enemies.length < 1) {
+                    spawnEnemy();
+                }
 
-                    if (enemy.hp <= 0) {
-                        createExplosion(enemy.x, enemy.y);
-                        enemies.splice(i, 1);
-                        score += 100;
-                        addFloatingText(enemy.x, enemy.y, "+100 SCORE", "#38bdf8");
+                // 4. Update Enemy AI
+                enemies.forEach((enemy, idx) => {
+                    // Random AI Wandering
+                    enemy.moveTimer -= delta;
+                    if (enemy.moveTimer <= 0) {
+                        enemy.moveTimer = 2 + Math.random() * 3;
+                        enemy.targetDir.set((Math.random() - 0.5), 0, (Math.random() - 0.5)).normalize();
                     }
-                }
 
-                // Spawn Extra Enemies if depleted
-                if (enemies.length < 3) {
-                    spawnEnemies();
-                }
+                    enemy.mesh.position.addScaledVector(enemy.targetDir, 6 * delta);
+                    enemy.mesh.position.x = THREE.MathUtils.clamp(enemy.mesh.position.x, -bound, bound);
+                    enemy.mesh.position.z = THREE.MathUtils.clamp(enemy.mesh.position.z, -bound, bound);
 
-                // Update Zombies
-                for (let i = zombies.length - 1; i >= 0; i--) {
-                    const z = zombies[i];
-                    z.update(player, enemies);
-                    z.draw();
-                    if (z.hp <= 0) {
-                        zombies.splice(i, 1);
-                        score += 25;
-                        addFloatingText(z.x, z.y, "+25", "#22c55e");
+                    // Aim at Player or Allies
+                    const distToPlayer = enemy.mesh.position.distanceTo(playerGroup.position);
+                    enemy.mesh.lookAt(playerGroup.position.x, enemy.mesh.position.y, playerGroup.position.z);
+
+                    // AI Shooting Frequency
+                    if (time - enemy.lastShot > CONFIG.enemyReloadTime && distToPlayer < 120) {
+                        enemy.lastShot = time + (Math.random() * 1.5);
+                        spawnEnemyBullet(enemy.mesh.position, playerGroup.position);
                     }
-                }
+                });
 
-                // Update Meteors
-                for (let i = meteors.length - 1; i >= 0; i--) {
-                    const m = meteors[i];
-                    m.update(dt);
-                    m.draw();
-                    if (m.crashed) meteors.splice(i, 1);
-                }
+                // 5. Update Allied AI (Level 2)
+                allies.forEach((ally) => {
+                    if (enemies.length > 0) {
+                        // Find closest enemy
+                        let closest = enemies[0];
+                        let minDist = 9999;
+                        enemies.forEach(e => {
+                            const d = ally.mesh.position.distanceTo(e.mesh.position);
+                            if (d < minDist) {
+                                minDist = d;
+                                closest = e;
+                            }
+                        });
 
-                // Update Air Drops
-                for (let i = airDrops.length - 1; i >= 0; i--) {
-                    const ad = airDrops[i];
-                    ad.draw();
-
-                    if (Math.hypot(player.x - ad.x, player.y - ad.y) < player.radius + ad.radius) {
-                        if (ad.type === 'HEALTH') {
-                            player.hp = Math.min(PLAYER_MAX_HP, player.hp + 50);
-                            showAlert("💚 獲得健康補給 +50 HP!");
-                            addFloatingText(player.x, player.y, "+50 HP", "#10b981");
-                        } else {
-                            player.magsLeft = Math.min(MAX_MAGS, player.magsLeft + 2);
-                            showAlert("⚡ 獲得彈夾補給 +2 彈夾!");
-                            addFloatingText(player.x, player.y, "+2 MAGS", "#f59e0b");
+                        ally.mesh.lookAt(closest.mesh.position.x, ally.mesh.position.y, closest.mesh.position.z);
+                        if (minDist > 15) {
+                            ally.mesh.translateZ(8 * delta);
                         }
-                        airDrops.splice(i, 1);
-                    }
-                }
 
-                // Update Bullets
+                        // Ally Shoot
+                        if (time - ally.lastShot > 3.0) {
+                            ally.lastShot = time;
+                            const bGeo = new THREE.SphereGeometry(0.3, 8, 8);
+                            const bMat = new THREE.MeshBasicMaterial({ color: 0x4ade80 });
+                            const bMesh = new THREE.Mesh(bGeo, bMat);
+                            bMesh.position.copy(ally.mesh.position).add(new THREE.Vector3(0, 2, 0));
+                            scene.add(bMesh);
+
+                            const dir = new THREE.Vector3().subVectors(closest.mesh.position, ally.mesh.position).normalize();
+                            bullets.push({ mesh: bMesh, dir: dir, speed: 2.0, isPlayer: true, damage: 25, life: 100 });
+                        }
+                    }
+                });
+
+                // 6. Update Bullets & Collisions
                 for (let i = bullets.length - 1; i >= 0; i--) {
                     const b = bullets[i];
-                    b.update();
-                    b.draw();
+                    b.mesh.position.addScaledVector(b.dir, b.speed);
+                    b.life--;
 
-                    if (b.markedForDeletion) {
+                    let removed = false;
+
+                    // Bullet hit ground or expired
+                    if (b.life <= 0 || b.mesh.position.y < 0) {
+                        scene.remove(b.mesh);
                         bullets.splice(i, 1);
                         continue;
                     }
 
+                    // Player Shell -> Hits Enemies
                     if (b.isPlayer) {
-                        // Player Bullet vs Enemies
-                        for (let enemy of enemies) {
-                            if (Math.hypot(b.x - enemy.x, b.y - enemy.y) < enemy.radius + b.radius) {
-                                enemy.hp -= 30;
-                                sound.playHit();
-                                createExplosion(b.x, b.y);
-                                addFloatingText(enemy.x, enemy.y, "-30", "#38bdf8");
-                                b.markedForDeletion = true;
-                                break;
-                            }
-                        }
+                        for (let j = enemies.length - 1; j >= 0; j--) {
+                            const e = enemies[j];
+                            if (b.mesh.position.distanceTo(e.mesh.position) < 3.2) {
+                                e.hp -= b.damage;
+                                playSound('hit');
 
-                        // Player Bullet vs Zombies
-                        for (let z of zombies) {
-                            if (Math.hypot(b.x - z.x, b.y - z.y) < z.radius + b.radius) {
-                                z.hp -= 30;
-                                sound.playHit();
-                                b.markedForDeletion = true;
+                                scene.remove(b.mesh);
+                                bullets.splice(i, 1);
+                                removed = true;
+
+                                if (e.hp <= 0) {
+                                    scene.remove(e.mesh);
+                                    enemies.splice(j, 1);
+                                    STATE.enemiesKilled++;
+                                    updateHUDCounters();
+
+                                    // Level 2 Win Condition Check
+                                    if (STATE.currentLevel === 2 && enemies.length === 0) {
+                                        gameOver(true);
+                                    }
+                                }
                                 break;
                             }
                         }
                     } else {
-                        // Enemy Bullet vs Player
-                        if (Math.hypot(b.x - player.x, b.y - player.y) < player.radius + b.radius) {
-                            player.hp -= 15;
-                            sound.playHit();
-                            createExplosion(b.x, b.y);
-                            addFloatingText(player.x, player.y, "-15 HP", "#ef4444");
-                            b.markedForDeletion = true;
+                        // Enemy Shell -> Hits Player
+                        if (b.mesh.position.distanceTo(playerGroup.position) < 2.5) {
+                            STATE.playerHP -= b.damage;
+                            playSound('hit');
+                            updateHUDHP();
 
-                            if (player.hp <= 0) {
-                                player.hp = 0;
-                                gameState = 'GAMEOVER';
-                                showEndScreen(false, "坦克被擊毀！ TANK DESTROYED!");
+                            scene.remove(b.mesh);
+                            bullets.splice(i, 1);
+                            removed = true;
+
+                            if (STATE.playerHP <= 0) {
+                                gameOver(false);
                             }
                         }
                     }
                 }
-
-                // Draw Player Tank
-                player.draw();
-
-                // Update Particles
-                for (let i = particles.length - 1; i >= 0; i--) {
-                    const p = particles[i]; p.update(); p.draw();
-                    if (p.life <= 0) particles.splice(i, 1);
-                }
-
-                // Floating Text Overlay
-                for (let i = floatingTexts.length - 1; i >= 0; i--) {
-                    const ft = floatingTexts[i];
-                    ft.y -= 0.8;
-                    ft.life--;
-                    ctx.save();
-                    ctx.globalAlpha = Math.max(0, ft.life / 40);
-                    ctx.fillStyle = ft.color;
-                    ctx.font = 'bold 14px sans-serif';
-                    ctx.fillText(ft.text, ft.x, ft.y);
-                    ctx.restore();
-                    if (ft.life <= 0) floatingTexts.splice(i, 1);
-                }
-
-                // Sandstorm Fog Visual Effect
-                if (currentEvent === 'SANDSTORM') {
-                    ctx.fillStyle = 'rgba(217, 119, 6, 0.25)';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }
-
-                updateHUD();
             }
 
-            // Crosshair
-            drawCrosshair();
-
-            ctx.restore();
-            requestAnimationFrame(gameLoop);
+            renderer.render(scene, camera);
         }
 
-        function showEndScreen(isVictory, titleMsg) {
-            clearInterval(matchInterval);
-            modalOverlay.classList.remove('hidden');
-            if (isVictory) {
-                modalTitle.innerText = "MISSION VICTORY!";
-                modalTitle.className = "text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-500 mb-2";
-                modalDesc.innerText = `${titleMsg} 你的總得分為: ${score}`;
-                startBtn.innerText = "RESTART MISSION 再玩一次";
-            } else {
-                modalTitle.innerText = "MISSION FAILED!";
-                modalTitle.className = "text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-500 mb-2";
-                modalDesc.innerText = `${titleMsg} 最終得分: ${score}`;
-                startBtn.innerText = "TRY AGAIN 重新開始";
-            }
-        }
-
-        requestAnimationFrame(gameLoop);
+        // --- INIT CALL ---
+        window.onload = () => {
+            initScene();
+            animate();
+        };
     </script>
 </body>
 </html>
 ```
 
-### Summary of New Additions:
-1. **2-Minute Match Timer**: Placed prominently in the top-center HUD counting down from `02:00`.
-2. **Dynamic Random Events**: Triggered automatically every 15–20 seconds:
-   - **殭屍爆發 (Zombie Outbreak)**: Hordes of green zombies swarm tanks and deal melee damage.
-   - **隕石雨 (Meteor Shower)**: Warning target circles appear on screen followed by explosive meteors causing AOE splash damage.
-   - **空投補給 (Air Drop Supply)**: Health (+50 HP) or Ammo Magazine crates land on the battlefield.
-   - **沙塵暴 (Sandstorm)**: Lowers visibility and slows all tank movements.
-   - **EMP 電磁脈衝 (EMP Blast)**: Temporarily disables shooting for 5 seconds.
-3. **Sound & Visual Upgrades**: Added zombie groans, event alert chimes, screen shake, floating damage text numbers, and event banners.
+### Main Highlights Added:
+1. **First-Person View (FPV)**: Rendered inside the tank cockpit featuring dynamic aiming reticle overlay.
+2. **"次記" Rapid-Fire Cannon Button & Shortcut**:
+   - Touch/click button on HUD labeled **"次記"** (or press key `R`).
+   - Holding down triggers automatic infinite-stream cannon blasts.
+3. **Primary Fire Controls**:
+   - Press `T` or tap the **擊發** button.
+   - 20-round clip, infinite total magazines, 0.5s auto reload.
+4. **Movement Controls**:
+   - `W` (Forward), `S` (Backward), `P`/`A` (Turn Left), `Q`/`D` (Turn Right).
+5. **Level 1**:
+   - Exactly **1 Red Enemy Tank** (auto-respawns upon destruction so active count remains 1).
+   - 60-second battle stage.
+6. **Tank Selection Screen**:
+   - Choice between Tank 1 (150 HP) or Tank 2 Heavy Armor (500 HP) before Stage 2.
+7. **Level 2**:
+   - Epic battle featuring **100 Red Enemy Tanks** vs **Player + 5 Green Allied Tanks**.
