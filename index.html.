@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>無面之室 (FaceLess Room)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body { background: #000; color: #fff; font-family: monospace; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  
+  #game-container { width: 100%; max-width: 800px; height: 600px; background: #111; position: relative; border: 2px solid #333; overflow: hidden; }
+  
+  /* 主選單 */
+  #main-menu { position: absolute; inset: 0; background: #050505; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+  #main-menu h1 { font-size: 2.5rem; color: #880000; text-shadow: 0 0 10px #ff0000; margin-bottom: 20px; }
+  .btn { background: #222; color: #fff; border: 1px solid #555; padding: 10px 20px; font-size: 1.1rem; cursor: pointer; margin: 8px; transition: 0.2s; }
+  .btn:hover { background: #880000; border-color: #ff0000; }
+  
+  /* 視角畫面 */
+  #viewport { width: 100%; height: 100%; position: relative; background: #080808; display: flex; align-items: center; justify-content: center; }
+  #view-room { width: 80%; height: 60%; border: 2px solid #222; position: relative; background: #151515; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+  
+  /* 手電筒光圈 */
+  #flashlight { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 50%, transparent 120px, rgba(0,0,0,0.95) 280px); }
+  
+  /* UI 介面 */
+  #ui-layer { position: absolute; top: 15px; left: 15px; right: 15px; display: flex; justify-content: space-between; font-size: 1rem; pointer-events: none; z-index: 10; }
+  .hud-item { background: rgba(0,0,0,0.7); padding: 5px 10px; border: 1px solid #444; }
+  
+  #compass { position: absolute; bottom: 15px; left: 15px; background: rgba(0,0,0,0.8); padding: 10px; border: 1px solid #444; text-align: center; font-size: 0.85rem; z-index: 10; }
+  
+  #controls { position: absolute; bottom: 15px; right: 15px; display: grid; grid-template-columns: repeat(3, 50px); gap: 5px; z-index: 10; }
+  .ctrl-btn { width: 50px; height: 45px; background: #333; color: #fff; border: 1px solid #666; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .ctrl-btn:active { background: #666; }
+  
+  /* 小遊戲遮罩 */
+  #minigame-overlay { position: absolute; inset: 0; background: rgba(20, 0, 0, 0.92); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 50; }
+  #heart-bar { width: 280px; height: 30px; background: #333; border: 2px solid #fff; position: relative; margin: 20px 0; }
+  #target-zone { position: absolute; left: 110px; width: 60px; height: 100%; background: rgba(0, 255, 0, 0.5); }
+  #slider { position: absolute; left: 0; width: 10px; height: 100%; background: #ff0000; }
+  
+  #message { position: absolute; top: 60px; width: 100%; text-align: center; color: #ffcc00; font-size: 1rem; text-shadow: 0 0 5px #000; pointer-events: none; z-index: 20; }
+  
+  .chase-mode { animation: pulse-red 0.5s infinite alternate; }
+  @keyframes pulse-red { from { box-shadow: inset 0 0 20px #880000; } to { box-shadow: inset 0 0 80px #ff0000; } }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <!-- 主選單 -->
+  <div id="main-menu">
+    <h1>無面之室</h1>
+    <p style="margin-bottom: 20px; color: #aaa;">在昏暗宅邸中尋找 10 個神秘方塊並逃離</p>
+    <div>
+      <button class="btn" onclick="startGame('easy')">簡單難度</button>
+      <button class="btn" onclick="startGame('normal')">一般難度</button>
+      <button class="btn" onclick="startGame('hard')">困難難度</button>
+    </div>
+  </div>
+
+  <!-- 遊戲 UI -->
+  <div id="ui-layer">
+    <div class="hud-item">血量: <span id="hp" style="color:#0f0;">100</span></div>
+    <div class="hud-item">方塊: <span id="cubes" style="color:#0ffff;">0</span>/10</div>
+    <div class="hud-item">時間: <span id="timer" style="color:#ff0;">05:00</span></div>
+  </div>
+
+  <div id="message"></div>
+
+  <!-- 探索畫面 -->
+  <div id="viewport">
+    <div id="flashlight"></div>
+    <div id="view-room">
+      <div id="room-name" style="font-size: 1.5rem; color: #aaa; margin-bottom: 10px;">大廳</div>
+      <div id="interact-target" style="font-size: 1.1rem; color: #fff;"></div>
+    </div>
+  </div>
+
+  <!-- 羅盤資訊 -->
+  <div id="compass">
+    目前位置: <span id="pos-text">大廳</span><br>
+    <small>(支援 W/A/D/E 或下方按鈕)</small>
+  </div>
+
+  <!-- 操作按鈕 -->
+  <div id="controls">
+    <div></div><button class="ctrl-btn" onclick="move('F')">W</button><div></div>
+    <button class="ctrl-btn" onclick="turn('L')">A</button>
+    <button class="ctrl-btn" onclick="interact()">E</button>
+    <button class="ctrl-btn" onclick="turn('R')">D</button>
+  </div>
+
+  <!-- 遭遇小遊戲 -->
+  <div id="minigame-overlay">
+    <h2 style="color: #ff0000; margin-bottom: 10px;">⚠️ 遭遇無臉怪！</h2>
+    <p>按下【空白鍵】或點擊按鈕進行校正！</p>
+    <div id="heart-bar">
+      <div id="target-zone"></div>
+      <div id="slider"></div>
+    </div>
+    <button class="btn" onclick="checkHeartbeat()">校正心跳</button>
+  </div>
+</div>
+
+<script>
+const map = {
+  "大廳": { N: "主走廊", S: "大門", E: "餐廳", W: "廚房" },
+  "主走廊": { N: "書房", S: "大廳", E: "收藏室", W: "主臥室" },
+  "餐廳": { W: "大廳", N: "收藏室" },
+  "廚房": { E: "大廳", N: "主臥室" },
+  "書房": { S: "主走廊" },
+  "收藏室": { W: "主走廊", S: "餐廳" },
+  "主臥室": { E: "主走廊", S: "廚房" },
+  "大門": { N: "大廳" }
+};
+
+const directions = ["N", "E", "S", "W"];
+const dirNames = { N: "北", E: "東", S: "南", W: "西" };
+
+let hp = 100;
+let cubesFound = 0;
+let timeLeft = 300;
+let currentPos = "大廳";
+let currentDirIndex = 0;
+let cubeLocations = {};
+let monsterPos = "";
+let timerInterval = null;
+let isChaseMode = false;
+let inMinigame = false;
+let sliderPos = 0;
+let sliderSpeed = 4;
+let sliderDirection = 1;
+let minigameAnim = null;
+
+function startGame(difficulty) {
+  document.getElementById("main-menu").style.display = "none";
+  hp = 100;
+  cubesFound = 0;
+  timeLeft = 300;
+  isChaseMode = false;
+
+  if (difficulty === 'easy') sliderSpeed = 3;
+  if (difficulty === 'normal') sliderSpeed = 5;
+  if (difficulty === 'hard') sliderSpeed = 8;
+  
+  const rooms = ["大廳", "主走廊", "餐廳", "廚房", "書房", "收藏室", "主臥室"];
+  cubeLocations = {};
+  rooms.forEach(r => cubeLocations[r] = 0);
+  
+  for(let i = 0; i < 10; i++) {
+    let r = rooms[Math.floor(Math.random() * rooms.length)];
+    cubeLocations[r] = (cubeLocations[r] || 0) + 1;
+  }
+
+  monsterPos = "書房";
+
+  updateUI();
+  clearInterval(timerInterval);
+  timerInterval = setInterval(gameLoop, 1000);
+  setMessage("探索宅邸，收集 10 個發光方塊並找到大門逃離！");
+}
+
+function updateUI() {
+  document.getElementById("hp").innerText = hp;
+  document.getElementById("cubes").innerText = cubesFound;
+  
+  let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+  let s = (timeLeft % 60).toString().padStart(2, '0');
+  document.getElementById("timer").innerText = `${m}:${s}`;
+  
+  let dir = directions[currentDirIndex];
+  document.getElementById("pos-text").innerText = `${currentPos} (面向:${dirNames[dir]})`;
+  document.getElementById("room-name").innerText = currentPos;
+
+  let targetRoom = map[currentPos][dir];
+  let interactText = "";
+  if (currentPos === "大門" && dir === "S") {
+    interactText = cubesFound >= 10 ? "[E] 開鎖逃離大宅" : "[E] 需要 10 個方塊解鎖大門";
+  } else if (cubeLocations[currentPos] > 0) {
+    interactText = `[E] 搜尋房間 (還有 ${cubeLocations[currentPos]} 個方塊)`;
+  } else if (targetRoom) {
+    interactText = `前方通道通往: ${targetRoom}`;
+  } else {
+    interactText = "前方是一道封死木牆";
+  }
+  document.getElementById("interact-target").innerText = interactText;
+}
+
+function turn(dir) {
+  if (inMinigame) return;
+  if (dir === 'L') currentDirIndex = (currentDirIndex + 3) % 4;
+  if (dir === 'R') currentDirIndex = (currentDirIndex + 1) % 4;
+  updateUI();
+}
+
+function move(dir) {
+  if (inMinigame) return;
+  let currentDir = directions[currentDirIndex];
+  let nextRoom = map[currentPos][currentDir];
+  
+  if (nextRoom) {
+    currentPos = nextRoom;
+    checkMonsterEncounter();
+    updateUI();
+  } else {
+    setMessage("眼前是牆壁，無法繼續前進！");
+  }
+}
+
+function interact() {
+  if (inMinigame) return;
+  
+  if (currentPos === "大門" && directions[currentDirIndex] === "S") {
+    if (cubesFound >= 10) {
+      endGame(true, "你成功集齊方塊並打開大門逃離了大宅！");
+    } else {
+      setMessage("方塊數量不足，無法開鎖！");
+    }
+    return;
+  }
+
+  if (cubeLocations[currentPos] > 0) {
+    cubeLocations[currentPos]--;
+    cubesFound++;
+    setMessage(`發現神秘方塊！目前進度: ${cubesFound}/10`);
+    updateUI();
+  } else {
+    setMessage("這裡已經沒有可搜尋的方塊了。");
+  }
+}
+
+function gameLoop() {
+  if (timeLeft > 0) {
+    timeLeft--;
+  } else if (!isChaseMode) {
+    triggerChaseMode();
+  }
+
+  if (Math.random() < 0.25) {
+    const rooms = Object.keys(map);
+    monsterPos = rooms[Math.floor(Math.random() * rooms.length)];
+    checkMonsterEncounter();
+  }
+
+  if (isChaseMode) {
+    hp -= 2;
+    if (hp <= 0) endGame(false, "你被暴走的無臉怪吞噬了...");
+  }
+  
+  updateUI();
+}
+
+function checkMonsterEncounter() {
+  if (currentPos === monsterPos && !inMinigame) {
+    startMinigame();
+  }
+}
+
+function triggerChaseMode() {
+  isChaseMode = true;
+  document.getElementById("game-container").classList.add("chase-mode");
+  setMessage("⚠️ 時間到！燈光熄滅！無臉怪暴走！快衝向大門！");
+}
+
+function startMinigame() {
+  inMinigame = true;
+  document.getElementById("minigame-overlay").style.display = "flex";
+  sliderPos = 0;
+  clearInterval(minigameAnim);
+  minigameAnim = setInterval(animateSlider, 20);
+}
+
+function animateSlider() {
+  sliderPos += sliderSpeed * sliderDirection;
+  if (sliderPos >= 270 || sliderPos <= 0) sliderDirection *= -1;
+  document.getElementById("slider").style.left = sliderPos + "px";
+}
+
+function checkHeartbeat() {
+  if (!inMinigame) return;
+  clearInterval(minigameAnim);
+  
+  if (sliderPos >= 110 && sliderPos <= 170) {
+    hp -= 20;
+    setMessage("成功掙脫無臉怪！血量扣除 20。");
+  } else {
+    hp -= 40;
+    setMessage("校正失敗！被無臉怪重擊，血量扣除 40！");
+  }
+
+  document.getElementById("minigame-overlay").style.display = "none";
+  inMinigame = false;
+  monsterPos = "大廳";
+  
+  if (hp <= 0) {
+    endGame(false, "你的血量歸零，倒在了暗處...");
+  }
+  updateUI();
+}
+
+function setMessage(msg) {
+  document.getElementById("message").innerText = msg;
+}
+
+function endGame(isWin, text) {
+  clearInterval(timerInterval);
+  alert(isWin ? `🎉 勝利！\n${text}` : `☠️ Game Over！\n${text}`);
+  location.reload();
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "w" || e.key === "W") move('F');
+  if (e.key === "a" || e.key === "A") turn('L');
+  if (e.key === "d" || e.key === "D") turn('R');
+  if (e.key === "e" || e.key === "E") interact();
+  if (e.key === " " && inMinigame) {
+    e.preventDefault();
+    checkHeartbeat();
+  }
+});
+</script>
+</body>
+</html>
